@@ -180,6 +180,12 @@ class ContractService {
         throw new Error('User has already voted on this poll');
       }
       
+      // Check if user is the poll creator
+      const owner = await pollContract.owner();
+      if (owner.toLowerCase() === userAddress.toLowerCase()) {
+        throw new Error('Poll creator cannot vote on their own poll');
+      }
+      
       // Vote on the poll with proper gas settings
       const tx = await pollContract.vote(option, this.gasSettings);
       const receipt = await tx.wait();

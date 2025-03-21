@@ -64,6 +64,7 @@ contract Poll is Ownable {
         require(_option < options.length, "Invalid option");
         require(votes[msg.sender] == 0, "Already voted");
         require(endTime == 0 || block.timestamp < endTime, "Poll has ended");
+        require(msg.sender != owner(), "Poll creator cannot vote on their own poll");
         
         // Record vote (add 1 to distinguish from uninitialized state)
         votes[msg.sender] = _option + 1;

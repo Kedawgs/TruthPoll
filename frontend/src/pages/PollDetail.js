@@ -45,6 +45,9 @@ const PollDetail = () => {
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   };
   
+  // Check if current user is the poll creator
+  const isCreator = poll?.creator?.toLowerCase() === account?.toLowerCase();
+  
   // Handle voting
   const handleVote = async () => {
     if (!isConnected) {
@@ -54,6 +57,11 @@ const PollDetail = () => {
     
     if (selectedOption === null) {
       setError('Please select an option');
+      return;
+    }
+    
+    if (isCreator) {
+      setError('Poll creator cannot vote on their own poll');
       return;
     }
     
@@ -162,7 +170,7 @@ const PollDetail = () => {
           <div>
             <span className="font-medium">Created by: </span>
             <span>{formatAddress(poll.creator)}</span>
-            {poll.creator.toLowerCase() === account?.toLowerCase() && (
+            {isCreator && (
               <span className="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
                 You
               </span>
@@ -190,6 +198,12 @@ const PollDetail = () => {
         </div>
       </div>
       
+      {isCreator && poll.isActive && (
+        <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700">
+          <p>As the creator of this poll, you cannot vote on it.</p>
+        </div>
+      )}
+      
       <div className="mb-6">
         <h2 className="text-lg font-semibold mb-3">Options</h2>
         
@@ -204,7 +218,7 @@ const PollDetail = () => {
                 checked={selectedOption === index}
                 onChange={() => setSelectedOption(index)}
                 className="mr-2"
-                disabled={!poll.isActive || !isConnected || voteSuccess}
+                disabled={!poll.isActive || !isConnected || voteSuccess || isCreator}
               />
               <label htmlFor={`option-${index}`} className="font-medium">
                 {option}
@@ -246,7 +260,7 @@ const PollDetail = () => {
         <div className="flex justify-end">
           <button
             onClick={handleVote}
-            disabled={selectedOption === null || !isConnected || voting || voteSuccess}
+            disabled={selectedOption === null || !isConnected || voting || voteSuccess || isCreator}
             className="btn btn-primary"
           >
             {voting ? 'Submitting Vote...' : 'Vote'}
