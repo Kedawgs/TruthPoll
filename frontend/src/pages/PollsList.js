@@ -70,7 +70,7 @@ const PollsList = () => {
         return;
       }
       
-      // TODO: Implement search functionality with your backend
+      // Now using the search parameter from the updated controller
       const params = {
         search: searchQuery,
         limit: 9

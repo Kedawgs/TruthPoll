@@ -1,10 +1,16 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Web3Context } from '../context/Web3Context';
 
 const CreatePoll = () => {
   const navigate = useNavigate();
-  const { createPoll, isConnected, error: web3Error } = useContext(Web3Context);
+  const { 
+    createPoll, 
+    isConnected, 
+    error: web3Error, 
+    authType,
+    account 
+  } = useContext(Web3Context);
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -14,6 +20,11 @@ const CreatePoll = () => {
   const [tags, setTags] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // Add debug logging to see what's happening with auth state
+  useEffect(() => {
+    console.log("Create Poll - Auth state:", { isConnected, authType, account });
+  }, [isConnected, authType, account]);
   
   // Categories list
   const categories = [
@@ -105,19 +116,20 @@ const CreatePoll = () => {
     }
   };
   
+  // Check if user is connected (either via wallet or Magic)
   if (!isConnected) {
     return (
       <div className="max-w-3xl mx-auto mt-10 p-8 bg-white rounded-lg shadow-md">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-4">Connect Wallet to Create a Poll</h2>
           <p className="mb-4 text-gray-600">
-            You need to connect your wallet to create a poll. Click the "Connect Wallet" button in the navigation bar.
+            You need to connect a wallet or sign in with Magic to create a poll.
           </p>
           <button 
-            onClick={() => navigate('/')} 
+            onClick={() => navigate('/signup')} 
             className="btn btn-primary"
           >
-            Back to Home
+            Sign Up / Sign In
           </button>
         </div>
       </div>
@@ -264,6 +276,11 @@ const CreatePoll = () => {
           <p className="mt-1 text-sm text-gray-500">
             Separate tags with commas (e.g. blockchain, voting, technology)
           </p>
+        </div>
+        
+        {/* Authentication type indicator */}
+        <div className="mb-6 p-4 bg-blue-50 border-l-4 border-blue-300 text-blue-700">
+          <p>Creating poll as: <span className="font-medium">{authType === 'magic' ? 'Magic User' : 'Wallet User'}</span></p>
         </div>
         
         {/* Submit Button */}

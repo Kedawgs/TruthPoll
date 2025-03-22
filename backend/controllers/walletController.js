@@ -16,6 +16,7 @@ const proxyWalletService = new ProxyWalletService(provider);
 exports.createWallet = async (req, res) => {
   try {
     const { userAddress } = req.body;
+    const { isMagicUser } = req.user || {};
     
     if (!userAddress) {
       return res.status(400).json({
@@ -26,7 +27,18 @@ exports.createWallet = async (req, res) => {
     
     console.log(`Creating wallet for user: ${userAddress}`);
     
-    // Create or get existing proxy wallet
+    // For Magic users, return their address directly without creating a proxy wallet
+    if (isMagicUser) {
+      return res.status(201).json({
+        success: true,
+        data: {
+          address: userAddress,
+          isMagicUser: true
+        }
+      });
+    }
+    
+    // Create or get existing proxy wallet for non-Magic users
     const wallet = await proxyWalletService.createProxyWallet(userAddress);
     
     console.log(`Wallet created successfully: ${JSON.stringify(wallet)}`);
@@ -52,11 +64,20 @@ exports.createWallet = async (req, res) => {
 exports.fundWallet = async (req, res) => {
   try {
     const { userAddress, amount } = req.body;
+    const { isMagicUser } = req.user || {};
     
     if (!userAddress || !amount) {
       return res.status(400).json({
         success: false,
         error: 'Please provide user address and amount'
+      });
+    }
+    
+    // For Magic users, we can't fund their wallet directly
+    if (isMagicUser) {
+      return res.status(400).json({
+        success: false,
+        error: 'Direct funding not supported for Magic.link users'
       });
     }
     
@@ -87,8 +108,24 @@ exports.fundWallet = async (req, res) => {
 exports.getWallet = async (req, res) => {
   try {
     const userAddress = req.params.address;
+    const { isMagicUser } = req.user || {};
     
-    // Find the wallet in the database
+    // For Magic users, return address info directly
+    if (isMagicUser && req.user.publicAddress === userAddress) {
+      const balance = await provider.getBalance(userAddress);
+      
+      return res.status(200).json({
+        success: true,
+        data: {
+          userAddress: userAddress,
+          proxyAddress: userAddress, // Same address for Magic users
+          balance: ethers.utils.formatEther(balance),
+          isMagicUser: true
+        }
+      });
+    }
+    
+    // Find the wallet in the database for non-Magic users
     const wallet = await ProxyWallet.findOne({ userAddress });
     
     if (!wallet) {
@@ -128,6 +165,7 @@ exports.getWallet = async (req, res) => {
 exports.executeTransaction = async (req, res) => {
   try {
     const { userAddress, toAddress, data, value = '0' } = req.body;
+    const { isMagicUser } = req.user || {};
     
     if (!userAddress || !toAddress) {
       return res.status(400).json({
@@ -136,7 +174,15 @@ exports.executeTransaction = async (req, res) => {
       });
     }
     
-    // Execute the transaction
+    // For Magic users, transactions are handled by Magic.link on the frontend
+    if (isMagicUser) {
+      return res.status(400).json({
+        success: false,
+        error: 'Server-side transaction execution not supported for Magic.link users'
+      });
+    }
+    
+    // Execute the transaction for non-Magic users
     const receipt = await proxyWalletService.executeTransaction(
       userAddress,
       toAddress,

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Web3Context } from '../context/Web3Context';
 
 const Navbar = () => {
-  const { account, isConnected, connectWallet, loading } = useContext(Web3Context);
+  const { account, isConnected, loading, logout, authType } = useContext(Web3Context);
 
   // Format address for display
   const formatAddress = (address) => {
@@ -52,17 +52,31 @@ const Navbar = () => {
           </div>
           <div className="flex items-center">
             {isConnected ? (
-              <div className="bg-gray-100 text-gray-800 py-2 px-4 rounded-full text-sm">
-                {formatAddress(account)}
+              <div className="flex items-center space-x-4">
+                <div className="bg-gray-100 text-gray-800 py-2 px-4 rounded-full text-sm flex items-center">
+                  {formatAddress(account)}
+                  {authType === 'magic' && (
+                    <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                      Magic
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={logout}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  Sign Out
+                </button>
               </div>
             ) : (
-              <button
-                onClick={connectWallet}
-                disabled={loading}
-                className="btn btn-primary"
-              >
-                {loading ? 'Connecting...' : 'Connect Wallet'}
-              </button>
+              <div className="flex space-x-4">
+                <Link
+                  to="/signup"
+                  className="btn btn-primary"
+                >
+                  Sign Up
+                </Link>
+              </div>
             )}
           </div>
         </div>

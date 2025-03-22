@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const dotenv = require('dotenv');
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
+const magicAuth = require('./middleware/magicAuth'); // Add this line
 
 // Load environment variables
 dotenv.config();
@@ -19,11 +20,13 @@ app.use(helmet()); // Security headers
 app.use(cors()); // Enable CORS
 app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: false })); // Parse URL-encoded bodies
+app.use(magicAuth); // Add Magic authentication middleware
 
 // Mount routers
 app.use('/api/polls', require('./routes/pollRoutes'));
 app.use('/api/wallets', require('./routes/walletRoutes'));
 app.use('/api/contracts', require('./routes/contractRoutes'));
+app.use('/api/auth', require('./routes/authRoutes')); // Add this line
 
 // Basic route
 app.get('/', (req, res) => {

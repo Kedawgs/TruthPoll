@@ -6,6 +6,10 @@ import Home from './pages/Home';
 import PollsList from './pages/PollsList';
 import PollDetail from './pages/PollDetail';
 import CreatePoll from './pages/CreatePoll';
+import SignUp from './pages/SignUp';
+import MagicRedirect from './components/MagicRedirect'; // Import the new component
+import Privacy from './pages/Privacy';
+import Terms from './pages/Terms';
 import NotFound from './pages/NotFound';
 
 function App() {
@@ -20,6 +24,10 @@ function App() {
               <Route path="/polls" element={<PollsList />} />
               <Route path="/polls/:id" element={<PollDetail />} />
               <Route path="/create-poll" element={<CreatePoll />} />
+              <Route path="/signup" element={<SignUp />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/magic-callback" element={<MagicRedirect />} /> {/* Add this route */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </main>

@@ -16,6 +16,7 @@ const contractService = new ContractService(provider);
 exports.createPoll = async (req, res) => {
   try {
     const { title, description, options, creator, duration = 0, category = 'General', tags = [] } = req.body;
+    const { isMagicUser } = req.user || {};
 
     console.log("Creating poll with data:", { title, description, options, creator, duration, category, tags });
 
@@ -85,12 +86,22 @@ exports.getPolls = async (req, res) => {
     const isActive = req.query.active === 'true';
     const sortBy = req.query.sortBy || 'createdAt';
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const search = req.query.search || null;
 
     // Build query
     const query = {};
     if (category) query.category = category;
     if (creator) query.creator = creator;
     if (req.query.active !== undefined) query.isActive = isActive;
+
+    // Add search functionality
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { tags: { $in: [new RegExp(search, 'i')] } }
+      ];
+    }
 
     // Calculate pagination
     const skip = (page - 1) * limit;
@@ -192,6 +203,7 @@ exports.getPoll = async (req, res) => {
 exports.votePoll = async (req, res) => {
   try {
     const { optionIndex, voterAddress } = req.body;
+    const { isMagicUser } = req.user || {};
 
     if (optionIndex === undefined || !voterAddress) {
       return res.status(400).json({
@@ -213,6 +225,22 @@ exports.votePoll = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Poll contract not deployed'
+      });
+    }
+
+    // Check if user is the poll creator
+    if (poll.creator.toLowerCase() === voterAddress.toLowerCase()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Poll creator cannot vote on their own poll'
+      });
+    }
+
+    // For Magic users, verify the user is authenticated and using their own address
+    if (isMagicUser && req.user.publicAddress !== voterAddress) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized voting address'
       });
     }
 
@@ -244,6 +272,8 @@ exports.votePoll = async (req, res) => {
 exports.endPoll = async (req, res) => {
   try {
     const poll = await Poll.findById(req.params.id);
+    const { isMagicUser } = req.user || {};
+    const userAddress = isMagicUser ? req.user.publicAddress : null;
 
     if (!poll) {
       return res.status(404).json({
@@ -256,6 +286,14 @@ exports.endPoll = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Poll contract not deployed'
+      });
+    }
+
+    // Verify poll creator for Magic users
+    if (isMagicUser && poll.creator.toLowerCase() !== userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only the poll creator can end a poll'
       });
     }
 
@@ -287,6 +325,8 @@ exports.endPoll = async (req, res) => {
 exports.reactivatePoll = async (req, res) => {
   try {
     const { duration = 0 } = req.body;
+    const { isMagicUser } = req.user || {};
+    const userAddress = isMagicUser ? req.user.publicAddress : null;
     
     const poll = await Poll.findById(req.params.id);
 
@@ -301,6 +341,14 @@ exports.reactivatePoll = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Poll contract not deployed'
+      });
+    }
+
+    // Verify poll creator for Magic users
+    if (isMagicUser && poll.creator.toLowerCase() !== userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only the poll creator can reactivate a poll'
       });
     }
 
@@ -363,6 +411,50 @@ exports.searchPolls = async (req, res) => {
     });
   } catch (error) {
     console.error('Error searching polls:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Server Error'
+    });
+  }
+};
+
+/**
+ * @desc    Get my polls (polls created by the authenticated user)
+ * @route   GET /api/polls/my-polls
+ * @access  Private
+ */
+exports.getMyPolls = async (req, res) => {
+  try {
+    const { isMagicUser } = req.user || {};
+    
+    // Must be authenticated to access this endpoint
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+    
+    const creatorAddress = isMagicUser ? req.user.publicAddress : req.body.userAddress;
+    
+    if (!creatorAddress) {
+      return res.status(400).json({
+        success: false,
+        error: 'User address is required'
+      });
+    }
+    
+    // Find polls created by this user
+    const polls = await Poll.find({ creator: creatorAddress })
+      .sort({ createdAt: -1 });
+    
+    res.status(200).json({
+      success: true,
+      count: polls.length,
+      data: polls
+    });
+  } catch (error) {
+    console.error('Error getting user polls:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Server Error'
