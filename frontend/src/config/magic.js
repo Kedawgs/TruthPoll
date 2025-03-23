@@ -1,3 +1,4 @@
+// src/config/magic.js
 import { Magic } from 'magic-sdk';
 import { OAuthExtension } from '@magic-ext/oauth';
 
@@ -12,6 +13,7 @@ const createMagicInstance = () => {
     if (!magicInstance) {
       console.log("Creating new Magic instance");
       
+      // Make sure this is exactly your publishable key from Magic Dashboard
       magicInstance = new Magic(process.env.REACT_APP_MAGIC_PUBLISHABLE_KEY, {
         extensions: [
           new OAuthExtension()

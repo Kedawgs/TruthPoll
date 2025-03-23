@@ -1,129 +1,112 @@
+// src/context/Web3Context.js
+
+// Import necessary libraries
 import React, { createContext, useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import createMagicInstance from '../config/magic';
 import api from '../utils/api';
 
+// Create context
 export const Web3Context = createContext();
 
 export const Web3Provider = ({ children }) => {
+  // State variables
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [account, setAccount] = useState(null);
   const [chainId, setChainId] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [proxyWallet, setProxyWallet] = useState(null);
+  const [smartWalletAddress, setSmartWalletAddress] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [magic, setMagic] = useState(null);
   const [authType, setAuthType] = useState(null); // 'magic' or 'wallet'
-
-  // Check on mount if user is already connected via Magic
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  
+  // Open/close auth modal
+  const openAuthModal = () => setShowAuthModal(true);
+  const closeAuthModal = () => setShowAuthModal(false);
+  
+  // Initialize on mount
   useEffect(() => {
-    checkMagicAuth();
+    checkExistingAuth();
   }, []);
-
-  const checkMagicAuth = async () => {
+  
+  // Check if user is already authenticated
+  const checkExistingAuth = async () => {
     try {
-      console.log("Checking for existing Magic session...");
-      const magicInstance = createMagicInstance();
+      console.log("Checking for existing authentication...");
       
+      // First check for Magic session
+      const magicInstance = createMagicInstance();
       if (magicInstance) {
         setMagic(magicInstance);
-        
-        // Check if user is already logged in with Magic
         const isLoggedIn = await magicInstance.user.isLoggedIn();
-        console.log("Magic user is logged in:", isLoggedIn);
         
         if (isLoggedIn) {
-          try {
-            // Get the Ethereum provider from Magic
-            const magicProvider = new ethers.providers.Web3Provider(magicInstance.rpcProvider);
-            
-            // Use getInfo instead of getMetadata
-            const userMetadata = await magicInstance.user.getInfo();
-            const userAddress = userMetadata.publicAddress;
-            
-            console.log("Got user info:", userMetadata);
-            
-            // Update state with user info
-            setProvider(magicProvider);
-            setAccount(userAddress);
-            setSigner(magicProvider.getSigner());
-            setIsConnected(true);
-            setAuthType('magic');
-            setProxyWallet(userAddress);
-            
-            console.log("Magic session restored successfully");
-          } catch (metadataError) {
-            console.error("Error getting user info:", metadataError);
-            // Try alternative method to get user address
-            try {
-              const magicProvider = new ethers.providers.Web3Provider(magicInstance.rpcProvider);
-              const signer = magicProvider.getSigner();
-              const userAddress = await signer.getAddress();
-              
-              setProvider(magicProvider);
-              setAccount(userAddress);
-              setSigner(signer);
-              setIsConnected(true);
-              setAuthType('magic');
-              setProxyWallet(userAddress);
-            } catch (signerError) {
-              console.error("Error getting address from signer:", signerError);
-            }
-          }
-        } else if (window.ethereum) {
-          // Check for wallet connection
-          await initWalletConnection();
+          console.log("User is logged in with Magic");
+          await initMagicUser(magicInstance);
+          return;
         }
-      } else if (window.ethereum) {
-        // Check for wallet connection
-        await initWalletConnection();
       }
       
-      setLoading(false);
-    } catch (error) {
-      console.error("Error checking Magic auth:", error);
-      
-      // Fall back to checking wallet
+      // If no Magic session, check for connected wallet
       if (window.ethereum) {
         await initWalletConnection();
       }
       
       setLoading(false);
-    }
-  };
-
-  const persistSession = async (userInfo) => {
-    try {
-      // Store minimal session info in localStorage
-      const sessionData = {
-        address: userInfo.publicAddress,
-        email: userInfo.email,
-        authType: 'magic',
-        lastLogin: Date.now()
-      };
-      
-      localStorage.setItem('auth_session', JSON.stringify(sessionData));
-      console.log("Session persisted to localStorage");
     } catch (error) {
-      console.error("Error persisting session:", error);
+      console.error("Error checking authentication:", error);
+      setLoading(false);
     }
   };
-
+  
+  // Initialize Magic user
+  const initMagicUser = async (magicInstance) => {
+    try {
+      const magicProvider = new ethers.providers.Web3Provider(magicInstance.rpcProvider);
+      const userMetadata = await magicInstance.user.getInfo();
+      
+      setProvider(magicProvider);
+      setAccount(userMetadata.publicAddress);
+      setSigner(magicProvider.getSigner());
+      setIsConnected(true);
+      setAuthType('magic');
+      
+      try {
+        const network = await magicProvider.getNetwork();
+        setChainId(network.chainId);
+      } catch (err) {
+        console.error("Error getting network:", err);
+      }
+      
+      setLoading(false);
+      
+      console.log("Magic user initialized:", userMetadata.publicAddress);
+    } catch (error) {
+      console.error("Error initializing Magic user:", error);
+      setLoading(false);
+    }
+  };
+  
+  // Initialize wallet connection
   const initWalletConnection = async () => {
     try {
-      console.log("Initializing wallet connection...");
+      if (!window.ethereum) {
+        console.log("No ethereum provider found");
+        setLoading(false);
+        return;
+      }
       
-      // Create ethers provider
       const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
       setProvider(web3Provider);
-
+      
       // Get network
       const network = await web3Provider.getNetwork();
       setChainId(network.chainId);
-
-      // Check if user is already connected
+      
+      // Check if already connected
       const accounts = await window.ethereum.request({ method: 'eth_accounts' });
       
       if (accounts.length > 0) {
@@ -133,24 +116,111 @@ export const Web3Provider = ({ children }) => {
         setIsConnected(true);
         setAuthType('wallet');
         
-        // Get or create proxy wallet
-        await getOrCreateProxyWallet(accounts[0]);
+        // Get smart wallet address
+        await getSmartWalletAddress(accounts[0]);
       }
-
-      // Set up event listeners
+      
+      // Set up listeners
       window.ethereum.on('accountsChanged', handleAccountsChanged);
       window.ethereum.on('chainChanged', handleChainChanged);
       
-      console.log("Wallet initialization complete");
+      setLoading(false);
     } catch (error) {
-      console.error('Error initializing wallet:', error);
+      console.error("Error initializing wallet connection:", error);
+      setLoading(false);
     }
   };
-
+  
+  // Get smart wallet address for non-Magic users
+  const getSmartWalletAddress = async (userAddress) => {
+    try {
+      const response = await api.get(`/smart-wallets/${userAddress}`);
+      
+      if (response.data.success) {
+        setSmartWalletAddress(response.data.data.address);
+        console.log("Smart wallet address:", response.data.data.address);
+      }
+    } catch (error) {
+      console.error("Error getting smart wallet address:", error);
+    }
+  };
+  
+  // Handle accounts changed event
+  const handleAccountsChanged = async (accounts) => {
+    if (accounts.length === 0) {
+      // User disconnected
+      setAccount(null);
+      setSigner(null);
+      setIsConnected(false);
+      setSmartWalletAddress(null);
+      setAuthType(null);
+    } else {
+      // Account changed
+      setAccount(accounts[0]);
+      if (provider) {
+        setSigner(provider.getSigner());
+        await getSmartWalletAddress(accounts[0]);
+      }
+    }
+  };
+  
+  // Handle chain changed event
+  const handleChainChanged = () => {
+    window.location.reload();
+  };
+  
+  // Connect wallet
+  const connectWallet = async () => {
+    try {
+      if (!window.ethereum) {
+        setError('MetaMask is not installed. Please install it to use this app.');
+        return false;
+      }
+      
+      setLoading(true);
+      
+      // Request account access
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      
+      if (accounts.length > 0) {
+        // Create provider if not exists
+        if (!provider) {
+          const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+          setProvider(web3Provider);
+          setSigner(web3Provider.getSigner());
+          
+          // Get network
+          const network = await web3Provider.getNetwork();
+          setChainId(network.chainId);
+        } else {
+          setSigner(provider.getSigner());
+        }
+        
+        setAccount(accounts[0]);
+        setIsConnected(true);
+        setAuthType('wallet');
+        
+        // Get smart wallet address
+        await getSmartWalletAddress(accounts[0]);
+        
+        setLoading(false);
+        return true;
+      }
+      
+      setLoading(false);
+      return false;
+    } catch (error) {
+      console.error("Error connecting wallet:", error);
+      setError('Failed to connect wallet');
+      setLoading(false);
+      return false;
+    }
+  };
+  
+  // Login with Magic
   const loginWithMagic = async (method, params) => {
     try {
       setLoading(true);
-      console.log(`Starting Magic login with ${method}...`);
       
       const magicInstance = createMagicInstance();
       setMagic(magicInstance);
@@ -160,330 +230,313 @@ export const Web3Provider = ({ children }) => {
       }
       
       if (method === 'email') {
-        try {
-          await magicInstance.auth.loginWithMagicLink({ email: params.email });
-          console.log("Email login successful");
-          
-          // Get user metadata
-          const userMetadata = await magicInstance.user.getMetadata();
-          console.log("User metadata:", userMetadata);
-          
-          // Get Magic provider
-          const magicProvider = new ethers.providers.Web3Provider(magicInstance.rpcProvider);
-          
-          // Set account and related data
-          setAccount(userMetadata.publicAddress);
-          setProvider(magicProvider);
-          setSigner(magicProvider.getSigner());
-          setIsConnected(true);
-          setAuthType('magic');
-          setProxyWallet(userMetadata.publicAddress);
-          
-          setLoading(false);
-          return true;
-        } catch (error) {
-          console.error('Error in email login:', error);
-          setError('Failed to log in: ' + error.message);
-          setLoading(false);
-          return false;
-        }
+        await magicInstance.auth.loginWithMagicLink({ email: params.email });
+        await initMagicUser(magicInstance);
+        return true;
       } else if (method === 'google') {
-        console.log("Starting Google OAuth flow...");
-        
-        try {
-          // For OAuth, we redirect to the callback route
-          await magicInstance.oauth.loginWithRedirect({
-            provider: 'google',
-            redirectURI: `${window.location.origin}/magic-callback`
-          });
-          
-          // This won't execute as the page will redirect
-          return false;
-        } catch (oauthError) {
-          console.error('OAuth error:', oauthError);
-          setError('Failed to start OAuth flow: ' + oauthError.message);
-          setLoading(false);
-          return false;
-        }
+        await magicInstance.oauth.loginWithRedirect({
+          provider: 'google',
+          redirectURI: `${window.location.origin}/magic-callback`
+        });
+        // This will redirect
+        return false;
       } else {
         throw new Error('Unsupported login method');
       }
     } catch (error) {
-      console.error('Error logging in with Magic:', error);
-      setError('Failed to log in: ' + error.message);
+      console.error("Error logging in with Magic:", error);
+      setError(error.message || 'Failed to login');
       setLoading(false);
       return false;
     }
   };
-
-  const connectWithMagic = async (magicInstance) => {
-    try {
-      console.log("Connecting with Magic...");
-      if (!magicInstance) {
-        throw new Error('Magic instance is not available');
-      }
-      
-      // Get Magic provider
-      const magicProvider = new ethers.providers.Web3Provider(magicInstance.rpcProvider);
-      setProvider(magicProvider);
-      
-      // Get user info
-      const userMetadata = await magicInstance.user.getMetadata();
-      console.log("Magic user metadata:", userMetadata);
-      
-      if (!userMetadata || !userMetadata.publicAddress) {
-        throw new Error('Failed to get user metadata from Magic');
-      }
-      
-      setAccount(userMetadata.publicAddress);
-      
-      // Set network
-      try {
-        const network = await magicProvider.getNetwork();
-        setChainId(network.chainId);
-      } catch (err) {
-        console.error("Error getting network:", err);
-      }
-      
-      // Set signer
-      setSigner(magicProvider.getSigner());
-      
-      // IMPORTANT: Update these states
-      setIsConnected(true);
-      setAuthType('magic');
-      
-      // Use Magic address as proxy wallet
-      setProxyWallet(userMetadata.publicAddress);
-      
-      console.log("Magic connection successful. Connected address:", userMetadata.publicAddress);
-      return true;
-    } catch (error) {
-      console.error('Error connecting with Magic:', error);
-      setError('Failed to connect with Magic: ' + error.message);
-      return false;
-    }
-  };
-
-  const connectWalletWithProvider = async (providerName) => {
-    try {
-      setLoading(true);
-      console.log(`Connecting with ${providerName}...`);
-      
-      const magicInstance = createMagicInstance();
-      setMagic(magicInstance);
-      
-      if (!magicInstance && providerName !== 'metamask') {
-        throw new Error('Magic not initialized');
-      }
-      
-      if (providerName === 'metamask') {
-        // Use default MetaMask connection
-        return await connectWallet();
-      }
-      
-      // For other wallets, use Magic Connect
-      await magicInstance.connect.connectWith(providerName);
-      
-      const success = await connectWithMagic(magicInstance);
-      setAuthType('magic');
-      setLoading(false);
-      return success;
-    } catch (error) {
-      console.error(`Error connecting with ${providerName}:`, error);
-      setError(`Failed to connect with ${providerName}`);
-      setLoading(false);
-      return false;
-    }
-  };
-
-  const handleAccountsChanged = async (accounts) => {
-    if (accounts.length === 0) {
-      // User disconnected
-      setAccount(null);
-      setSigner(null);
-      setIsConnected(false);
-      setProxyWallet(null);
-      setAuthType(null);
-    } else {
-      // Account changed
-      setAccount(accounts[0]);
-      if (provider) {
-        setSigner(provider.getSigner());
-        await getOrCreateProxyWallet(accounts[0]);
-      }
-    }
-  };
-
-  const handleChainChanged = () => {
-    // Reload page on chain change
-    window.location.reload();
-  };
-
-  const connectWallet = async () => {
-    try {
-      if (!window.ethereum) {
-        setError('MetaMask is not installed. Please install it to use this app.');
-        return false;
-      }
-
-      setLoading(true);
-      console.log("Connecting with MetaMask...");
-      
-      // Request account access
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      
-      if (accounts.length > 0) {
-        // Create ethers provider if not exists
-        if (!provider) {
-          const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
-          setProvider(web3Provider);
-          setSigner(web3Provider.getSigner());
-        } else {
-          setSigner(provider.getSigner());
-        }
-        
-        setAccount(accounts[0]);
-        setIsConnected(true);
-        setAuthType('wallet');
-        
-        await getOrCreateProxyWallet(accounts[0]);
-        setLoading(false);
-        
-        console.log("Wallet connected successfully:", accounts[0]);
-        return true;
-      }
-      
-      setLoading(false);
-      return false;
-    } catch (error) {
-      console.error('Error connecting wallet:', error);
-      setError('Failed to connect wallet');
-      setLoading(false);
-      return false;
-    }
-  };
-
+  
+  // Logout
   const logout = async () => {
     try {
-      console.log("Logging out. Auth type:", authType);
-      
       if (authType === 'magic' && magic) {
         await magic.user.logout();
-        console.log("Magic logout successful");
       }
       
       // Reset state
       setAccount(null);
       setSigner(null);
       setIsConnected(false);
-      setProxyWallet(null);
+      setSmartWalletAddress(null);
       setAuthType(null);
       
-      console.log("Logout complete, state reset");
       return true;
     } catch (error) {
-      console.error('Error logging out:', error);
+      console.error("Error logging out:", error);
       return false;
     }
   };
-
-  const getOrCreateProxyWallet = async (userAddress) => {
-    // Skip proxy wallet creation for Magic users as Magic.link handles this
-    if (authType === 'magic') {
-      return;
-    }
-    
-    try {
-      console.log("Creating proxy wallet for:", userAddress);
-      const response = await api.post('/wallets', {
-        userAddress
-      });
   
-      if (response.data.success) {
-        setProxyWallet(response.data.data.address);
-        console.log("Proxy wallet created successfully:", response.data.data.address);
-      }
-    } catch (error) {
-      console.error('Error creating proxy wallet:', error);
-      // Don't set an error state here - just log it
-      // This prevents blocking the UI flow for users
-    }
-  };
-
-  // API functions to interact with backend
-  
-  const createPoll = async (pollData) => {
-    try {
-      if (!isConnected) {
-        throw new Error('Wallet not connected');
-      }
-
-      const response = await api.post('/polls', {
-        ...pollData,
-        creator: account
-      });
-
-      return response.data;
-    } catch (error) {
-      console.error('Error creating poll:', error);
-      throw error;
-    }
-  };
-
-  const getPolls = async (params = {}) => {
-    try {
-      const response = await api.get('/polls', { params });
-      return response.data;
-    } catch (error) {
-      console.error('Error getting polls:', error);
-      throw error;
-    }
-  };
-
-  const getPoll = async (id) => {
-    try {
-      const response = await api.get(`/polls/${id}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error getting poll:', error);
-      throw error;
-    }
-  };
-
+  // Vote on a poll - unified for both Magic and wallet users
   const votePoll = async (id, optionIndex) => {
     try {
       if (!isConnected) {
         throw new Error('Wallet not connected');
       }
-
-      // Use account address directly for Magic users, otherwise use proxy wallet
-      const voterAddress = authType === 'magic' ? account : proxyWallet;
       
-      if (!voterAddress) {
-        throw new Error('Wallet not connected or proxy wallet not set up');
+      // Get poll contract address
+      const pollResponse = await getPoll(id);
+      const pollAddress = pollResponse.data.contractAddress;
+      
+      // Sign the vote
+      let signature;
+      
+      if (authType === 'magic') {
+        // For Magic users - sign with Magic wallet
+        signature = await signMagicVote(pollAddress, optionIndex);
+      } else {
+        // For wallet users - sign with their wallet
+        signature = await signWalletVote(pollAddress, optionIndex);
       }
-
+      
+      // Send to backend for relaying
       const response = await api.post(`/polls/${id}/vote`, {
         optionIndex,
-        voterAddress
+        voterAddress: account,
+        signature
       });
-
+      
       return response.data;
     } catch (error) {
-      console.error('Error voting on poll:', error);
+      console.error("Error voting on poll:", error);
       throw error;
     }
   };
-
-  // Log state changes for debugging
-  useEffect(() => {
-    console.log("Auth state updated:", { 
-      isConnected, 
-      authType, 
-      account: account ? `${account.substring(0, 6)}...${account.substring(account.length - 4)}` : null
-    });
-  }, [isConnected, authType, account]);
-
+  
+  // Sign a vote with Magic
+  const signMagicVote = async (pollAddress, optionIndex) => {
+    try {
+      // Get user's nonce
+      const nonceResponse = await api.get(`/polls/nonce/${pollAddress}/${account}`);
+      const nonce = nonceResponse.data.data.nonce;
+      
+      // Create domain data
+      const domain = {
+        name: 'TruthPoll',
+        version: '1',
+        chainId: chainId || 80002, // Polygon Amoy
+        verifyingContract: pollAddress
+      };
+      
+      // Define types
+      const types = {
+        Vote: [
+          { name: 'voter', type: 'address' },
+          { name: 'option', type: 'uint256' },
+          { name: 'nonce', type: 'uint256' }
+        ]
+      };
+      
+      // Create value
+      const value = {
+        voter: account,
+        option: optionIndex,
+        nonce: nonce
+      };
+      
+      // Sign typed data
+      const signer = provider.getSigner();
+      const signature = await signer._signTypedData(domain, types, value);
+      
+      return signature;
+    } catch (error) {
+      console.error("Error signing with Magic:", error);
+      throw error;
+    }
+  };
+  
+  // Sign a vote with wallet
+  const signWalletVote = async (pollAddress, optionIndex) => {
+    try {
+      // Create a message hash for the smart wallet to execute
+      const pollInterface = new ethers.utils.Interface([
+        'function vote(uint256 _option) external'
+      ]);
+      
+      // Encode the vote function call
+      const callData = pollInterface.encodeFunctionData('vote', [optionIndex]);
+      
+      // Create message hash
+      const messageHash = ethers.utils.keccak256(
+        ethers.utils.defaultAbiCoder.encode(
+          ['address', 'uint256', 'bytes32'],
+          [pollAddress, 0, ethers.utils.keccak256(callData)]
+        )
+      );
+      
+      // Sign the message
+      const signer = provider.getSigner();
+      const signature = await signer.signMessage(ethers.utils.arrayify(messageHash));
+      
+      return signature;
+    } catch (error) {
+      console.error("Error signing with wallet:", error);
+      throw error;
+    }
+  };
+  
+  // Claim rewards
+  const claimReward = async (pollAddress) => {
+    try {
+      if (!isConnected) {
+        throw new Error('Wallet not connected');
+      }
+      
+      // Sign the claim
+      let signature;
+      
+      if (authType === 'magic') {
+        // For Magic users
+        signature = await signMagicRewardClaim(pollAddress);
+      } else {
+        // For wallet users
+        signature = await signWalletRewardClaim(pollAddress);
+      }
+      
+      // Send to backend for relaying
+      const response = await api.post(`/polls/claim-reward`, {
+        pollAddress,
+        signature
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error claiming reward:", error);
+      throw error;
+    }
+  };
+  
+  // Sign a reward claim with Magic
+  const signMagicRewardClaim = async (pollAddress) => {
+    try {
+      // Get user's nonce
+      const nonceResponse = await api.get(`/polls/nonce/${pollAddress}/${account}`);
+      const nonce = nonceResponse.data.data.nonce;
+      
+      // Create domain data
+      const domain = {
+        name: 'TruthPoll',
+        version: '1',
+        chainId: chainId || 80002, // Polygon Amoy
+        verifyingContract: pollAddress
+      };
+      
+      // Define types
+      const types = {
+        ClaimReward: [
+          { name: 'claimer', type: 'address' },
+          { name: 'nonce', type: 'uint256' }
+        ]
+      };
+      
+      // Create value
+      const value = {
+        claimer: account,
+        nonce: nonce
+      };
+      
+      // Sign typed data
+      const signer = provider.getSigner();
+      const signature = await signer._signTypedData(domain, types, value);
+      
+      return signature;
+    } catch (error) {
+      console.error("Error signing reward claim with Magic:", error);
+      throw error;
+    }
+  };
+  
+  // Sign a reward claim with wallet
+  const signWalletRewardClaim = async (pollAddress) => {
+    try {
+      // Create a message hash for the smart wallet to execute
+      const pollInterface = new ethers.utils.Interface([
+        'function claimReward() external'
+      ]);
+      
+      // Encode the claimReward function call
+      const callData = pollInterface.encodeFunctionData('claimReward', []);
+      
+      // Create message hash
+      const messageHash = ethers.utils.keccak256(
+        ethers.utils.defaultAbiCoder.encode(
+          ['address', 'uint256', 'bytes32'],
+          [pollAddress, 0, ethers.utils.keccak256(callData)]
+        )
+      );
+      
+      // Sign the message
+      const signer = provider.getSigner();
+      const signature = await signer.signMessage(ethers.utils.arrayify(messageHash));
+      
+      return signature;
+    } catch (error) {
+      console.error("Error signing reward claim with wallet:", error);
+      throw error;
+    }
+  };
+  
+  // Get polls
+  const getPolls = async (params = {}) => {
+    try {
+      const response = await api.get('/polls', { params });
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching polls:", error);
+      throw error;
+    }
+  };
+  
+  // Get single poll
+  const getPoll = async (id) => {
+    try {
+      const response = await api.get(`/polls/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching poll:", error);
+      throw error;
+    }
+  };
+  
+  // Create poll
+  const createPoll = async (pollData) => {
+    try {
+      if (!isConnected) {
+        throw new Error('Wallet not connected');
+      }
+      
+      const response = await api.post('/polls', {
+        ...pollData,
+        creator: account
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error("Error creating poll:", error);
+      throw error;
+    }
+  };
+  
+  // Get claimable rewards
+  const getClaimableRewards = async () => {
+    try {
+      if (!isConnected) {
+        throw new Error('Wallet not connected');
+      }
+      
+      const response = await api.get(`/polls/claimable-rewards/${account}`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching claimable rewards:", error);
+      throw error;
+    }
+  };
+  
   return (
     <Web3Context.Provider
       value={{
@@ -492,20 +545,23 @@ export const Web3Provider = ({ children }) => {
         account,
         chainId,
         isConnected,
-        proxyWallet,
+        smartWalletAddress,
         loading,
         error,
         authType,
         magic,
+        showAuthModal,
+        openAuthModal,
+        closeAuthModal,
         connectWallet,
-        connectWalletWithProvider,
         loginWithMagic,
-        completeMagicOAuthLogin: connectWithMagic,
         logout,
-        createPoll,
+        votePoll,
         getPolls,
         getPoll,
-        votePoll
+        createPoll,
+        claimReward,
+        getClaimableRewards
       }}
     >
       {children}

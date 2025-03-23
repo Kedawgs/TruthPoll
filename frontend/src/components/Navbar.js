@@ -1,9 +1,17 @@
+// src/components/Navbar.js
 import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { Web3Context } from '../context/Web3Context';
 
 const Navbar = () => {
-  const { account, isConnected, loading, logout, authType } = useContext(Web3Context);
+  const { 
+    account, 
+    isConnected, 
+    loading, 
+    logout, 
+    authType,
+    openAuthModal
+  } = useContext(Web3Context);
 
   // Format address for display
   const formatAddress = (address) => {
@@ -70,12 +78,12 @@ const Navbar = () => {
               </div>
             ) : (
               <div className="flex space-x-4">
-                <Link
-                  to="/signup"
+                <button
+                  onClick={openAuthModal}
                   className="btn btn-primary"
                 >
                   Sign Up
-                </Link>
+                </button>
               </div>
             )}
           </div>

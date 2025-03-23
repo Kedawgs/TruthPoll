@@ -1,24 +1,32 @@
+// backend/controllers/pollController.js
 const Poll = require('../models/Poll');
 const ethers = require('ethers');
 const ContractService = require('../services/contractService');
+const RelayerService = require('../services/relayerService');
+const SmartWalletService = require('../services/smartWalletService');
 
 // Create provider
 const provider = new ethers.providers.JsonRpcProvider(process.env.POLYGON_AMOY_RPC_URL);
 
-// Initialize contract service
+// Initialize services
 const contractService = new ContractService(provider);
+const relayerService = new RelayerService(provider, process.env.PLATFORM_WALLET_PRIVATE_KEY);
+const smartWalletService = new SmartWalletService(provider, process.env.PLATFORM_WALLET_PRIVATE_KEY);
 
-/**
- * @desc    Create a new poll
- * @route   POST /api/polls
- * @access  Public
- */
+// Create a new poll
 exports.createPoll = async (req, res) => {
   try {
-    const { title, description, options, creator, duration = 0, category = 'General', tags = [] } = req.body;
+    const { 
+      title, description, options, creator, 
+      duration = 0, category = 'General', tags = [],
+      rewardPerVoter = 0
+    } = req.body;
     const { isMagicUser } = req.user || {};
 
-    console.log("Creating poll with data:", { title, description, options, creator, duration, category, tags });
+    console.log("Creating poll with data:", { 
+      title, description, options, creator, 
+      duration, category, tags, rewardPerVoter 
+    });
 
     // Validate input
     if (!title || !options || options.length < 2 || !creator) {
@@ -38,8 +46,12 @@ exports.createPoll = async (req, res) => {
     }
 
     console.log("Creating poll on blockchain...");
+    
     // Create the poll on the blockchain
-    const result = await contractService.createPoll(title, options, duration);
+    const result = await contractService.createPoll(
+      title, options, duration, rewardPerVoter
+    );
+    
     console.log("Poll created on blockchain:", result);
 
     console.log("Saving poll to database...");
@@ -52,7 +64,9 @@ exports.createPoll = async (req, res) => {
       contractAddress: result.pollAddress,
       duration,
       category,
-      tags
+      tags,
+      hasRewards: rewardPerVoter > 0,
+      rewardPerVoter: rewardPerVoter
     });
     console.log("Poll saved to database:", poll._id);
 
@@ -71,11 +85,7 @@ exports.createPoll = async (req, res) => {
   }
 };
 
-/**
- * @desc    Get all polls
- * @route   GET /api/polls
- * @access  Public
- */
+// Get all polls
 exports.getPolls = async (req, res) => {
   try {
     // Parse query parameters
@@ -139,11 +149,7 @@ exports.getPolls = async (req, res) => {
   }
 };
 
-/**
- * @desc    Get a single poll
- * @route   GET /api/polls/:id
- * @access  Public
- */
+// Get a single poll
 exports.getPoll = async (req, res) => {
   try {
     const poll = await Poll.findById(req.params.id);
@@ -195,20 +201,16 @@ exports.getPoll = async (req, res) => {
   }
 };
 
-/**
- * @desc    Vote on a poll
- * @route   POST /api/polls/:id/vote
- * @access  Public
- */
+// Vote on a poll - unified handler for both Magic and non-Magic users
 exports.votePoll = async (req, res) => {
   try {
-    const { optionIndex, voterAddress } = req.body;
+    const { optionIndex, voterAddress, signature } = req.body;
     const { isMagicUser } = req.user || {};
 
-    if (optionIndex === undefined || !voterAddress) {
+    if (optionIndex === undefined || !voterAddress || !signature) {
       return res.status(400).json({
         success: false,
-        error: 'Please provide option index and voter address'
+        error: 'Please provide option index, voter address, and signature'
       });
     }
 
@@ -236,25 +238,48 @@ exports.votePoll = async (req, res) => {
       });
     }
 
-    // For Magic users, verify the user is authenticated and using their own address
-    if (isMagicUser && req.user.publicAddress !== voterAddress) {
-      return res.status(403).json({
-        success: false,
-        error: 'Unauthorized voting address'
+    // For Magic users, verify user is authenticated
+    if (isMagicUser) {
+      if (req.user.publicAddress.toLowerCase() !== voterAddress.toLowerCase()) {
+        return res.status(403).json({
+          success: false,
+          error: 'Unauthorized voting address'
+        });
+      }
+      
+      console.log("Handling Magic user vote");
+      
+      // Relay the transaction directly
+      const result = await relayerService.relayMagicVote(
+        poll.contractAddress,
+        voterAddress,
+        optionIndex,
+        signature
+      );
+      
+      res.status(200).json({
+        success: true,
+        data: result
+      });
+    } else {
+      console.log("Handling non-Magic user vote");
+      
+      // For non-Magic users - use smart wallet
+      const smartWalletAddress = await smartWalletService.deployWalletIfNeeded(voterAddress);
+      
+      // Relay through smart wallet
+      const result = await relayerService.relaySmartWalletVote(
+        smartWalletAddress,
+        poll.contractAddress,
+        optionIndex,
+        signature
+      );
+      
+      res.status(200).json({
+        success: true,
+        data: result
       });
     }
-
-    // Vote on the poll via the contract service
-    const result = await contractService.votePoll(
-      poll.contractAddress, 
-      optionIndex, 
-      voterAddress
-    );
-
-    res.status(200).json({
-      success: true,
-      data: result
-    });
   } catch (error) {
     console.error('Error voting on poll:', error);
     res.status(500).json({
@@ -264,11 +289,7 @@ exports.votePoll = async (req, res) => {
   }
 };
 
-/**
- * @desc    End a poll
- * @route   PUT /api/polls/:id/end
- * @access  Public (should be restricted to owner in a real app)
- */
+// End a poll
 exports.endPoll = async (req, res) => {
   try {
     const poll = await Poll.findById(req.params.id);
@@ -317,11 +338,7 @@ exports.endPoll = async (req, res) => {
   }
 };
 
-/**
- * @desc    Reactivate a poll
- * @route   PUT /api/polls/:id/reactivate
- * @access  Public (should be restricted to owner in a real app)
- */
+// Reactivate a poll
 exports.reactivatePoll = async (req, res) => {
   try {
     const { duration = 0 } = req.body;
@@ -379,11 +396,118 @@ exports.reactivatePoll = async (req, res) => {
   }
 };
 
-/**
- * @desc    Search polls
- * @route   GET /api/polls/search
- * @access  Public
- */
+// Handle reward claims
+exports.claimReward = async (req, res) => {
+  try {
+    const { pollAddress, signature } = req.body;
+    const { isMagicUser } = req.user || {};
+    const userAddress = req.user.publicAddress;
+
+    if (!pollAddress || !signature) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide poll address and signature'
+      });
+    }
+
+    // For Magic users, relay directly
+    if (isMagicUser) {
+      console.log("Handling Magic user reward claim");
+      const result = await relayerService.relayMagicRewardClaim(
+        pollAddress,
+        userAddress,
+        signature
+      );
+      
+      res.status(200).json({
+        success: true,
+        data: result
+      });
+    } else {
+      console.log("Handling non-Magic user reward claim");
+      // For non-Magic users - use smart wallet
+      const smartWalletAddress = await smartWalletService.getWalletAddress(userAddress);
+      
+      // Relay through smart wallet
+      const result = await relayerService.relaySmartWalletRewardClaim(
+        smartWalletAddress,
+        pollAddress,
+        signature
+      );
+      
+      res.status(200).json({
+        success: true,
+        data: result
+      });
+    }
+  } catch (error) {
+    console.error('Error claiming reward:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Server Error'
+    });
+  }
+};
+
+// Get claimable rewards for a user
+exports.getClaimableRewards = async (req, res) => {
+  try {
+    const userAddress = req.params.address;
+    
+    // Find all polls
+    const polls = await Poll.find({ hasRewards: true });
+    
+    // Check which rewards are claimable
+    const claimableRewards = await Promise.all(
+      polls.map(async (poll) => {
+        const canClaim = await contractService.canClaimReward(poll.contractAddress, userAddress);
+        const hasVoted = await contractService.hasUserVoted(poll.contractAddress, userAddress);
+        
+        return {
+          pollId: poll._id,
+          pollAddress: poll.contractAddress,
+          pollTitle: poll.title,
+          canClaim,
+          hasVoted,
+          rewardAmount: poll.rewardPerVoter
+        };
+      })
+    );
+    
+    res.status(200).json({
+      success: true,
+      data: claimableRewards.filter(reward => reward.hasVoted)
+    });
+  } catch (error) {
+    console.error('Error getting claimable rewards:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Server Error'
+    });
+  }
+};
+
+// Get user's nonce for a poll (for signing)
+exports.getUserNonce = async (req, res) => {
+  try {
+    const { pollAddress, userAddress } = req.params;
+    
+    const nonce = await contractService.getUserNonce(pollAddress, userAddress);
+    
+    res.status(200).json({
+      success: true,
+      data: { nonce }
+    });
+  } catch (error) {
+    console.error('Error getting user nonce:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Server Error'
+    });
+  }
+};
+
+// Search polls
 exports.searchPolls = async (req, res) => {
   try {
     const { query } = req.query;
@@ -411,50 +535,6 @@ exports.searchPolls = async (req, res) => {
     });
   } catch (error) {
     console.error('Error searching polls:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Server Error'
-    });
-  }
-};
-
-/**
- * @desc    Get my polls (polls created by the authenticated user)
- * @route   GET /api/polls/my-polls
- * @access  Private
- */
-exports.getMyPolls = async (req, res) => {
-  try {
-    const { isMagicUser } = req.user || {};
-    
-    // Must be authenticated to access this endpoint
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
-    }
-    
-    const creatorAddress = isMagicUser ? req.user.publicAddress : req.body.userAddress;
-    
-    if (!creatorAddress) {
-      return res.status(400).json({
-        success: false,
-        error: 'User address is required'
-      });
-    }
-    
-    // Find polls created by this user
-    const polls = await Poll.find({ creator: creatorAddress })
-      .sort({ createdAt: -1 });
-    
-    res.status(200).json({
-      success: true,
-      count: polls.length,
-      data: polls
-    });
-  } catch (error) {
-    console.error('Error getting user polls:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Server Error'

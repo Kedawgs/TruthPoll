@@ -1,37 +1,53 @@
+// scripts/deploy.js
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 
 async function main() {
   try {
-    // Get the contract factory
-    const PollFactory = await hre.ethers.getContractFactory("PollFactory");
+    console.log("Starting deployment process...");
     
-    // Deploy the contract
+    // Get USDT address from env
+    const usdtAddress = process.env.USDT_ADDRESS;
+    
+    if (!usdtAddress) {
+      throw new Error("USDT_ADDRESS not set in environment variables");
+    }
+    
+    console.log("Using USDT address:", usdtAddress);
+    
+    // 1. Deploy SmartWalletFactory
+    console.log("Deploying SmartWalletFactory...");
+    const SmartWalletFactory = await hre.ethers.getContractFactory("SmartWalletFactory");
+    const smartWalletFactory = await SmartWalletFactory.deploy();
+    await smartWalletFactory.deployed();
+    console.log("SmartWalletFactory deployed to:", smartWalletFactory.address);
+    
+    // 2. Deploy PollFactory
     console.log("Deploying PollFactory...");
-    const pollFactory = await PollFactory.deploy();
-    
-    // Wait for deployment to finish
+    const PollFactory = await hre.ethers.getContractFactory("PollFactory");
+    const pollFactory = await PollFactory.deploy(usdtAddress);
     await pollFactory.deployed();
-    
     console.log("PollFactory deployed to:", pollFactory.address);
     
-    // Save the address to a .env.local file
+    // Save addresses to .env.local
     const envLocalPath = path.join(__dirname, '..', '.env.local');
-    const envData = `FACTORY_ADDRESS=${pollFactory.address}\n`;
+    const envData = `SMART_WALLET_FACTORY_ADDRESS=${smartWalletFactory.address}\nFACTORY_ADDRESS=${pollFactory.address}\n`;
     
-    fs.writeFileSync(envLocalPath, envData, { flag: 'a' });
-    console.log("Factory address saved to .env.local file");
-    console.log("Make sure to update your main .env file with this address");
+    fs.writeFileSync(envLocalPath, envData);
+    console.log("Contract addresses saved to .env.local file");
+    console.log("Please update your main .env file with these addresses");
     
-    return pollFactory.address;
+    return {
+      smartWalletFactoryAddress: smartWalletFactory.address,
+      pollFactoryAddress: pollFactory.address
+    };
   } catch (error) {
     console.error("Error during deployment:", error);
     process.exit(1);
   }
 }
 
-// Execute the deployment
 main()
   .then(() => process.exit(0))
   .catch((error) => {

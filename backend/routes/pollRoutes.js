@@ -1,3 +1,4 @@
+// backend/routes/pollRoutes.js
 const express = require('express');
 const {
   createPoll,
@@ -6,6 +7,9 @@ const {
   votePoll,
   endPoll,
   reactivatePoll,
+  claimReward,
+  getClaimableRewards,
+  getUserNonce,
   searchPolls
 } = require('../controllers/pollController');
 
@@ -30,5 +34,15 @@ router.route('/:id/end')
 
 router.route('/:id/reactivate')
   .put(reactivatePoll); // Reactivate a poll
+
+// New routes for rewards and nonce
+router.route('/claim-reward')
+  .post(claimReward);     // Claim reward for a poll
+
+router.route('/claimable-rewards/:address')
+  .get(getClaimableRewards); // Get all claimable rewards for a user
+
+router.route('/nonce/:pollAddress/:userAddress')
+  .get(getUserNonce);      // Get user's nonce for a poll
 
 module.exports = router;

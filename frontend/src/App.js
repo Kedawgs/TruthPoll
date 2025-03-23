@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+// src/App.js
+import React, { useState, useEffect, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Web3Provider } from './context/Web3Context';
+import { Web3Provider, Web3Context } from './context/Web3Context';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import PollsList from './pages/PollsList';
@@ -11,6 +12,7 @@ import MagicRedirect from './components/MagicRedirect';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
 import NotFound from './pages/NotFound';
+import AuthModal from './components/AuthModal';
 
 function App() {
   // App state
@@ -49,20 +51,6 @@ function App() {
     setAppLoading(false);
   }, []);
 
-  // Protected route component
-  const ProtectedRoute = ({ children }) => {
-    // Get auth status from localStorage as a quick check
-    // The actual auth state is managed by Web3Context
-    const authSession = localStorage.getItem('auth_session');
-    const isAuthenticated = !!authSession;
-    
-    if (!isAuthenticated) {
-      return <Navigate to="/signup" />;
-    }
-    
-    return children;
-  };
-
   // Show loading screen while checking compatibility
   if (appLoading) {
     return (
@@ -100,42 +88,68 @@ function App() {
 
   return (
     <Web3Provider>
-      <Router>
-        <div className="min-h-screen bg-gray-50 flex flex-col">
-          <Navbar />
-          <main className="container mx-auto px-4 py-8 flex-grow">
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/polls" element={<PollsList />} />
-              <Route path="/polls/:id" element={<PollDetail />} />
-              <Route 
-                path="/create-poll" 
-                element={
-                  <ProtectedRoute>
-                    <CreatePoll />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route path="/signup" element={<SignUp />} />
-              <Route path="/privacy" element={<Privacy />} />
-              <Route path="/terms" element={<Terms />} />
-              <Route path="/magic-callback" element={<MagicRedirect />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </main>
-          <footer className="bg-white border-t py-6 mt-auto">
-            <div className="container mx-auto px-4 text-center text-gray-500 text-sm">
-              <p>© {new Date().getFullYear()} TruthPoll. All rights reserved.</p>
-              <div className="mt-2 flex justify-center space-x-4">
-                <a href="/privacy" className="hover:text-gray-700">Privacy Policy</a>
-                <a href="/terms" className="hover:text-gray-700">Terms of Service</a>
-              </div>
-              <p className="mt-2">Running on Polygon Amoy Testnet</p>
-            </div>
-          </footer>
-        </div>
-      </Router>
+      <AppContent />
     </Web3Provider>
+  );
+}
+
+// Separate component to use Web3Context
+function AppContent() {
+  const { showAuthModal, closeAuthModal } = useContext(Web3Context);
+  
+  // Protected route component
+  const ProtectedRoute = ({ children }) => {
+    const { isConnected, openAuthModal } = useContext(Web3Context);
+    
+    if (!isConnected) {
+      // Open the auth modal instead of redirecting
+      openAuthModal();
+      // Return null to prevent showing the protected route
+      return <Navigate to="/" />;
+    }
+    
+    return children;
+  };
+
+  return (
+    <Router>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Navbar />
+        <main className="container mx-auto px-4 py-8 flex-grow">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/polls" element={<PollsList />} />
+            <Route path="/polls/:id" element={<PollDetail />} />
+            <Route 
+              path="/create-poll" 
+              element={
+                <ProtectedRoute>
+                  <CreatePoll />
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="/signup" element={<SignUp />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/magic-callback" element={<MagicRedirect />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </main>
+        <footer className="bg-white border-t py-6 mt-auto">
+          <div className="container mx-auto px-4 text-center text-gray-500 text-sm">
+            <p>© {new Date().getFullYear()} TruthPoll. All rights reserved.</p>
+            <div className="mt-2 flex justify-center space-x-4">
+              <a href="/privacy" className="hover:text-gray-700">Privacy Policy</a>
+              <a href="/terms" className="hover:text-gray-700">Terms of Service</a>
+            </div>
+            <p className="mt-2">Running on Polygon Amoy Testnet</p>
+          </div>
+        </footer>
+        
+        {/* Auth Modal */}
+        <AuthModal isOpen={showAuthModal} onClose={closeAuthModal} />
+      </div>
+    </Router>
   );
 }
 

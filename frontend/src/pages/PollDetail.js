@@ -1,11 +1,21 @@
+// src/pages/PollDetail.js
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Web3Context } from '../context/Web3Context';
+import { ethers } from 'ethers';
 
 const PollDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getPoll, votePoll, isConnected, account } = useContext(Web3Context);
+  const { 
+    getPoll, 
+    votePoll, 
+    isConnected, 
+    account, 
+    authType,
+    openAuthModal,
+    claimReward
+  } = useContext(Web3Context);
   
   const [poll, setPoll] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -13,6 +23,11 @@ const PollDetail = () => {
   const [selectedOption, setSelectedOption] = useState(null);
   const [voting, setVoting] = useState(false);
   const [voteSuccess, setVoteSuccess] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [claimSuccess, setClaimSuccess] = useState(false);
+  
+  // Check if current user is creator
+  const isCreator = poll?.creator?.toLowerCase() === account?.toLowerCase();
   
   // Fetch poll data
   useEffect(() => {
@@ -45,13 +60,16 @@ const PollDetail = () => {
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   };
   
-  // Check if current user is the poll creator
-  const isCreator = poll?.creator?.toLowerCase() === account?.toLowerCase();
+  // Format USDT amount
+  const formatUSDT = (amount) => {
+    if (!amount) return '0';
+    return parseFloat(amount).toFixed(2);
+  };
   
   // Handle voting
   const handleVote = async () => {
     if (!isConnected) {
-      setError('Please connect your wallet to vote');
+      openAuthModal();
       return;
     }
     
@@ -69,9 +87,10 @@ const PollDetail = () => {
       setVoting(true);
       setError(null);
       
+      // Both Magic and non-Magic users use the same flow
       await votePoll(id, selectedOption);
       
-      // Refresh poll data after voting
+      // Refresh poll data
       const response = await getPoll(id);
       setPoll(response.data);
       
@@ -84,8 +103,35 @@ const PollDetail = () => {
       }, 3000);
     } catch (err) {
       console.error('Error voting:', err);
-      setError(err.response?.data?.error || 'Failed to submit vote');
+      setError(err.response?.data?.error || err.message || 'Failed to submit vote');
       setVoting(false);
+    }
+  };
+  
+  // Handle reward claim
+  const handleClaimReward = async () => {
+    if (!isConnected) {
+      openAuthModal();
+      return;
+    }
+    
+    try {
+      setClaiming(true);
+      setError(null);
+      
+      await claimReward(poll.contractAddress);
+      
+      setClaiming(false);
+      setClaimSuccess(true);
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setClaimSuccess(false);
+      }, 3000);
+    } catch (err) {
+      console.error('Error claiming reward:', err);
+      setError(err.response?.data?.error || err.message || 'Failed to claim reward');
+      setClaiming(false);
     }
   };
   
@@ -95,17 +141,39 @@ const PollDetail = () => {
     return Math.round((poll.onChain.results[optionIndex] / poll.onChain.totalVotes) * 100);
   };
   
+  // Check if user has already voted
+  const hasUserVoted = () => {
+    if (!poll?.onChain) return false;
+    
+    // Check if there's any vote data
+    return poll.onChain.results.some((count, index) => {
+      const isSelected = poll.onChain.userVote === index;
+      return isSelected && count > 0;
+    });
+  };
+  
+  // Check if user can claim reward
+  const canClaimReward = () => {
+    if (!poll?.onChain) return false;
+    
+    return (
+      poll.onChain.hasRewards && 
+      hasUserVoted() && 
+      (!poll.onChain.isActive || new Date() >= new Date(poll.onChain.endTime))
+    );
+  };
+  
   if (loading) {
     return (
       <div className="max-w-3xl mx-auto mt-10 p-8 bg-white rounded-lg shadow-md">
-        <div className="text-center py-8">
-          <p>Loading poll...</p>
+        <div className="flex justify-center items-center min-h-[200px]">
+          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary-600"></div>
         </div>
       </div>
     );
   }
   
-  if (error) {
+  if (error && !poll) {
     return (
       <div className="max-w-3xl mx-auto mt-10 p-8 bg-white rounded-lg shadow-md">
         <div className="text-center py-8">
@@ -142,8 +210,12 @@ const PollDetail = () => {
       <div className="mb-6">
         <div className="flex justify-between items-start mb-2">
           <h1 className="text-2xl font-bold">{poll.title}</h1>
-          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${poll.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-            {poll.isActive ? 'Active' : 'Closed'}
+          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+            poll.onChain?.isActive 
+              ? 'bg-green-100 text-green-800' 
+              : 'bg-red-100 text-red-800'
+          }`}>
+            {poll.onChain?.isActive ? 'Active' : 'Closed'}
           </span>
         </div>
         
@@ -164,6 +236,16 @@ const PollDetail = () => {
               #{tag}
             </span>
           ))}
+          
+          {poll.onChain?.hasRewards && (
+            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded flex items-center">
+              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z"/>
+                <path d="M10 5a1 1 0 011 1v3.586l2.707 2.707a1 1 0 01-1.414 1.414L9 10.414V6a1 1 0 011-1z"/>
+              </svg>
+              Reward: {formatUSDT(poll.onChain?.rewardPerVoter)} USDT
+            </span>
+          )}
         </div>
         
         <div className="text-sm text-gray-500 space-y-1 mb-4">
@@ -182,10 +264,10 @@ const PollDetail = () => {
             <span>{formatDate(poll.createdAt)}</span>
           </div>
           
-          {poll.endTime && (
+          {poll.onChain?.endTime && (
             <div>
               <span className="font-medium">Ends: </span>
-              <span>{formatDate(poll.endTime)}</span>
+              <span>{formatDate(poll.onChain.endTime)}</span>
             </div>
           )}
           
@@ -198,9 +280,39 @@ const PollDetail = () => {
         </div>
       </div>
       
-      {isCreator && poll.isActive && (
+      {isCreator && poll.onChain?.isActive && (
         <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700">
           <p>As the creator of this poll, you cannot vote on it.</p>
+        </div>
+      )}
+      
+      {!isConnected && (
+        <div className="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 text-blue-700">
+          <p>Connect your wallet or sign in to vote on this poll.</p>
+          <button 
+            onClick={openAuthModal}
+            className="mt-2 text-blue-700 underline"
+          >
+            Sign In / Connect Wallet
+          </button>
+        </div>
+      )}
+      
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">
+          <p>{error}</p>
+        </div>
+      )}
+      
+      {voteSuccess && (
+        <div className="mb-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-700">
+          <p>Your vote has been successfully recorded!</p>
+        </div>
+      )}
+      
+      {claimSuccess && (
+        <div className="mb-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-700">
+          <p>Your reward has been successfully claimed!</p>
         </div>
       )}
       
@@ -218,7 +330,7 @@ const PollDetail = () => {
                 checked={selectedOption === index}
                 onChange={() => setSelectedOption(index)}
                 className="mr-2"
-                disabled={!poll.isActive || !isConnected || voteSuccess || isCreator}
+                disabled={!poll.onChain?.isActive || voting || voteSuccess || isCreator || hasUserVoted()}
               />
               <label htmlFor={`option-${index}`} className="font-medium">
                 {option}
@@ -244,20 +356,8 @@ const PollDetail = () => {
         ))}
       </div>
       
-      {error && (
-        <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">
-          <p>{error}</p>
-        </div>
-      )}
-      
-      {voteSuccess && (
-        <div className="mb-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-700">
-          <p>Your vote has been successfully recorded!</p>
-        </div>
-      )}
-      
-      {poll.isActive && (
-        <div className="flex justify-end">
+      <div className="flex justify-between">
+        {poll.onChain?.isActive && !hasUserVoted() && !isCreator && (
           <button
             onClick={handleVote}
             disabled={selectedOption === null || !isConnected || voting || voteSuccess || isCreator}
@@ -265,12 +365,25 @@ const PollDetail = () => {
           >
             {voting ? 'Submitting Vote...' : 'Vote'}
           </button>
-        </div>
-      )}
+        )}
+        
+        {canClaimReward() && (
+          <button
+            onClick={handleClaimReward}
+            disabled={claiming || claimSuccess}
+            className="btn btn-primary bg-yellow-600 hover:bg-yellow-700"
+          >
+            {claiming ? 'Claiming Reward...' : 'Claim USDT Reward'}
+          </button>
+        )}
+      </div>
       
       <div className="mt-8 pt-4 border-t border-gray-200">
         <div className="text-sm text-gray-500">
           <p>Contract Address: {poll.contractAddress}</p>
+          {authType && (
+            <p className="mt-1">Connected as: {authType === 'magic' ? 'Magic User' : 'Wallet User'}</p>
+          )}
         </div>
       </div>
     </div>

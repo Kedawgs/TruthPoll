@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-// Import OpenZeppelin's Ownable contract for access control
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 contract Poll is Ownable {
+    using SafeERC20 for IERC20;
+    using ECDSA for bytes32;
+    
     // Poll metadata
     string public title;
     string[] public options;
@@ -12,34 +17,48 @@ contract Poll is Ownable {
     uint256 public endTime; // 0 means no end time
     bool public isActive;
     
+    // USDT token address
+    IERC20 public immutable usdtToken;
+    uint256 public rewardPerVoter;
+    uint256 public totalRewards;
+    
     // Voting data structures
     mapping(address => uint256) public votes;  // Maps voter address to their vote (1-indexed)
+    mapping(address => bool) public hasClaimedReward; // Track reward claims
     mapping(uint256 => uint256) public voteCount;  // Maps option index to number of votes
     uint256 public totalVotes;  // Total number of votes cast
     
+    // Meta-transaction nonces
+    mapping(address => uint256) private _nonces;
+    
     // Events for important state changes
     event Voted(address indexed voter, uint256 option);
+    event RewardClaimed(address indexed voter, uint256 amount);
     event PollEnded();
     event PollReactivated();
+    event RewardsFunded(address indexed funder, uint256 amount);
     
-    /**
-     * @dev Create a new poll
-     * @param _title The poll title
-     * @param _options The available voting options
-     * @param _duration Duration in seconds (0 for no end time)
-     * @param _owner Address that will own this poll
-     */
+    // Domain separator for EIP-712
+    bytes32 private immutable _DOMAIN_SEPARATOR;
+    bytes32 private constant _VOTE_TYPEHASH = 
+        keccak256("Vote(address voter,uint256 option,uint256 nonce)");
+    bytes32 private constant _CLAIM_TYPEHASH = 
+        keccak256("ClaimReward(address claimer,uint256 nonce)");
+    
     constructor(
         string memory _title,
         string[] memory _options,
         uint256 _duration,
-        address _owner
-    ) Ownable(_owner) {  // Pass the owner address to Ownable constructor
-        // Ensure at least 2 options
+        address _owner,
+        address _usdtAddress,
+        uint256 _rewardPerVoter
+    ) Ownable(_owner) {
         require(_options.length >= 2, "Poll must have at least 2 options");
         
         title = _title;
         creationTime = block.timestamp;
+        usdtToken = IERC20(_usdtAddress);
+        rewardPerVoter = _rewardPerVoter;
         
         // If duration is 0, poll has no end time
         if (_duration > 0) {
@@ -52,48 +71,144 @@ contract Poll is Ownable {
         for (uint256 i = 0; i < _options.length; i++) {
             options.push(_options[i]);
         }
+        
+        // Initialize domain separator for EIP-712
+        uint256 chainId;
+        assembly {
+            chainId := chainid()
+        }
+        _DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes("TruthPoll")),
+                keccak256(bytes("1")),
+                chainId,
+                address(this)
+            )
+        );
     }
     
-    /**
-     * @dev Vote on a poll option
-     * @param _option The index of the option to vote for
-     */
+    // Fund the poll with USDT rewards
+    function fundRewards(uint256 amount) external {
+        usdtToken.safeTransferFrom(msg.sender, address(this), amount);
+        totalRewards += amount;
+        emit RewardsFunded(msg.sender, amount);
+    }
+    
+    // Regular vote function (for wallet users)
     function vote(uint256 _option) external {
+        _vote(msg.sender, _option);
+    }
+    
+    // Meta-transaction vote function (for relayer)
+    function metaVote(
+        address _voter,
+        uint256 _option,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        // Recreate the message hash that was signed
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                _DOMAIN_SEPARATOR,
+                keccak256(abi.encode(_VOTE_TYPEHASH, _voter, _option, _nonces[_voter]))
+            )
+        );
+        
+        // Recover signer from the signature
+        address signer = ecrecover(digest, v, r, s);
+        require(signer == _voter, "Invalid signature");
+        
+        // Increment nonce
+        _nonces[_voter]++;
+        
+        _vote(_voter, _option);
+    }
+    
+    // Internal vote logic
+    function _vote(address _voter, uint256 _option) internal {
         // Validation checks
         require(isActive, "Poll is not active");
         require(_option < options.length, "Invalid option");
-        require(votes[msg.sender] == 0, "Already voted");
+        require(votes[_voter] == 0, "Already voted");
         require(endTime == 0 || block.timestamp < endTime, "Poll has ended");
-        require(msg.sender != owner(), "Poll creator cannot vote on their own poll");
+        require(_voter != owner(), "Poll creator cannot vote on their own poll");
         
         // Record vote (add 1 to distinguish from uninitialized state)
-        votes[msg.sender] = _option + 1;
+        votes[_voter] = _option + 1;
         voteCount[_option]++;
         totalVotes++;
         
         // Emit event
-        emit Voted(msg.sender, _option);
+        emit Voted(_voter, _option);
     }
     
-    /**
-     * @dev End the poll (only owner)
-     */
+    // Claim reward
+    function claimReward() external {
+        require(!isActive || block.timestamp >= endTime, "Poll must be ended");
+        require(votes[msg.sender] > 0, "Must have voted to claim reward");
+        require(!hasClaimedReward[msg.sender], "Reward already claimed");
+        require(rewardPerVoter > 0, "No rewards available");
+        require(totalRewards >= rewardPerVoter, "Insufficient reward funds");
+        
+        hasClaimedReward[msg.sender] = true;
+        totalRewards -= rewardPerVoter;
+        
+        usdtToken.safeTransfer(msg.sender, rewardPerVoter);
+        emit RewardClaimed(msg.sender, rewardPerVoter);
+    }
+    
+    // Meta-transaction claim reward
+    function metaClaimReward(
+        address _claimer,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        // Recreate the message hash that was signed
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                _DOMAIN_SEPARATOR,
+                keccak256(abi.encode(_CLAIM_TYPEHASH, _claimer, _nonces[_claimer]))
+            )
+        );
+        
+        // Recover signer from the signature
+        address signer = ecrecover(digest, v, r, s);
+        require(signer == _claimer, "Invalid signature");
+        
+        // Increment nonce
+        _nonces[_claimer]++;
+        
+        // Claim logic
+        require(!isActive || block.timestamp >= endTime, "Poll must be ended");
+        require(votes[_claimer] > 0, "Must have voted to claim reward");
+        require(!hasClaimedReward[_claimer], "Reward already claimed");
+        require(rewardPerVoter > 0, "No rewards available");
+        require(totalRewards >= rewardPerVoter, "Insufficient reward funds");
+        
+        hasClaimedReward[_claimer] = true;
+        totalRewards -= rewardPerVoter;
+        
+        usdtToken.safeTransfer(_claimer, rewardPerVoter);
+        emit RewardClaimed(_claimer, rewardPerVoter);
+    }
+    
+    // End poll
     function endPoll() external onlyOwner {
         require(isActive, "Poll is already inactive");
         isActive = false;
         emit PollEnded();
     }
     
-    /**
-     * @dev Reactivate a poll that was ended (only owner)
-     * @param _newDuration New duration in seconds (0 for no end time)
-     */
+    // Reactivate poll
     function reactivatePoll(uint256 _newDuration) external onlyOwner {
         require(!isActive, "Poll is already active");
         
         isActive = true;
-        
-        // Update end time if a new duration is provided
         if (_newDuration > 0) {
             endTime = block.timestamp + _newDuration;
         }
@@ -101,49 +216,40 @@ contract Poll is Ownable {
         emit PollReactivated();
     }
     
-    /**
-     * @dev Check if a user has voted
-     * @param _voter Address to check
-     * @return True if the user has voted
-     */
+    // Withdraw remaining rewards after poll ends
+    function withdrawRemainingRewards() external onlyOwner {
+        require(!isActive || block.timestamp >= endTime, "Poll must be ended");
+        uint256 amount = totalRewards;
+        totalRewards = 0;
+        usdtToken.safeTransfer(owner(), amount);
+    }
+    
+    // Check if a user has voted
     function hasVoted(address _voter) external view returns (bool) {
         return votes[_voter] > 0;
     }
     
-    /**
-     * @dev Get the option a user voted for
-     * @param _voter Address of the voter
-     * @return The index of the option they voted for
-     */
+    // Get option a user voted for
     function getUserVote(address _voter) external view returns (uint256) {
         require(votes[_voter] > 0, "User has not voted");
         return votes[_voter] - 1; // Subtract 1 to get the actual option index
     }
     
-    /**
-     * @dev Check if the poll is currently active
-     * @return True if the poll is active and not expired
-     */
+    // Check if poll is active
     function isPollActive() external view returns (bool) {
         if (!isActive) return false;
         if (endTime == 0) return true;
         return block.timestamp < endTime;
     }
     
-    /**
-     * @dev Get remaining time for poll (in seconds)
-     * @return Seconds remaining, or 0 if no end time or already ended
-     */
+    // Get remaining time for poll
     function getRemainingTime() external view returns (uint256) {
         if (endTime == 0) return 0; // No end time
         if (block.timestamp >= endTime) return 0; // Poll ended
         return endTime - block.timestamp;
     }
     
-    /**
-     * @dev Get poll results
-     * @return Array of vote counts for each option
-     */
+    // Get poll results
     function getResults() external view returns (uint256[] memory) {
         uint256[] memory results = new uint256[](options.length);
         
@@ -154,19 +260,29 @@ contract Poll is Ownable {
         return results;
     }
     
-    /**
-     * @dev Get all options
-     * @return Array of option strings
-     */
+    // Get all options
     function getOptions() external view returns (string[] memory) {
         return options;
     }
     
-    /**
-     * @dev Get number of options
-     * @return Count of options
-     */
+    // Get number of options
     function getOptionsCount() external view returns (uint256) {
         return options.length;
+    }
+    
+    // Get current nonce for a user
+    function getNonce(address _user) external view returns (uint256) {
+        return _nonces[_user];
+    }
+    
+    // Check if user can claim reward
+    function canClaimReward(address _user) external view returns (bool) {
+        if(hasClaimedReward[_user]) return false;
+        if(votes[_user] == 0) return false;
+        if(rewardPerVoter == 0) return false;
+        if(totalRewards < rewardPerVoter) return false;
+        if(isActive && (endTime == 0 || block.timestamp < endTime)) return false;
+        
+        return true;
     }
 }

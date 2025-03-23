@@ -1,103 +1,63 @@
+// backend/services/contractService.js
 const ethers = require('ethers');
+const PollFactory = require('../artifacts/contracts/PollFactory.sol/PollFactory.json');
+const Poll = require('../artifacts/contracts/Poll.sol/Poll.json');
 
-// We'll require the ABI artifacts after compiling the contracts
-// For now, let's define placeholders that we'll update later
-let PollFactoryABI = [];
-let PollABI = [];
-
-/**
- * Service for interacting with blockchain contracts
- */
 class ContractService {
-  /**
-   * Initialize the service
-   * @param {object} provider - An ethers.js provider
-   */
   constructor(provider) {
     this.provider = provider;
-    this.factoryAddress = process.env.FACTORY_ADDRESS;
     this.platformWallet = new ethers.Wallet(
       process.env.PLATFORM_WALLET_PRIVATE_KEY,
       provider
     );
     
-    // Default gas settings for Polygon Amoy testnet
+    // Default gas settings for Polygon
     this.gasSettings = {
       maxPriorityFeePerGas: ethers.utils.parseUnits("30", "gwei"),
       maxFeePerGas: ethers.utils.parseUnits("35", "gwei"),
       gasLimit: 3000000
     };
     
-    // Try to load contract ABIs if they exist
-    try {
-      PollFactoryABI = require('../artifacts/contracts/PollFactory.sol/PollFactory.json').abi;
-      PollABI = require('../artifacts/contracts/Poll.sol/Poll.json').abi;
-      
-      // Initialize the factory contract if the address is available
-      if (this.factoryAddress) {
-        this.factoryContract = new ethers.Contract(
-          this.factoryAddress,
-          PollFactoryABI,
-          this.platformWallet
-        );
-      }
-    } catch (error) {
-      console.log('Contract artifacts not found. Compile contracts first.');
-    }
-  }
-
-  /**
-   * Deploy the factory contract
-   * @return {string} Deployed contract address
-   */
-  async deployFactory() {
-    try {
-      // Create a factory for the contract
-      const contractFactory = await ethers.getContractFactory(
-        'PollFactory',
+    // Initialize factories
+    this.factoryAddress = process.env.FACTORY_ADDRESS;
+    this.usdtAddress = process.env.USDT_ADDRESS;
+    
+    if (this.factoryAddress) {
+      this.factoryContract = new ethers.Contract(
+        this.factoryAddress,
+        PollFactory.abi,
         this.platformWallet
       );
-      
-      // Deploy the contract with proper gas settings
-      console.log('Deploying PollFactory...');
-      const factory = await contractFactory.deploy(this.gasSettings);
-      
-      // Wait for deployment to finish
-      await factory.deployed();
-      
-      console.log('PollFactory deployed to:', factory.address);
-      
-      // Update the factory address and contract instance
-      this.factoryAddress = factory.address;
-      this.factoryContract = factory;
-      
-      return factory.address;
-    } catch (error) {
-      console.error('Error deploying factory contract:', error);
-      throw error;
+      console.log(`PollFactory initialized at ${this.factoryAddress}`);
+    } else {
+      console.log('PollFactory address not set in environment variables');
     }
   }
 
-  /**
-   * Create a new poll
-   * @param {string} title - Poll title
-   * @param {string[]} options - Array of poll options
-   * @param {number} duration - Duration in seconds (0 for no end time)
-   * @return {object} Transaction details and poll address
-   */
-  async createPoll(title, options, duration = 0) {
+  // Create a new poll
+  async createPoll(title, options, duration = 0, rewardPerVoter = 0) {
     try {
       if (!this.factoryContract) {
         throw new Error('Factory contract not initialized');
       }
+      
+      console.log(`Creating poll: ${title}, Options: ${options.length}, Duration: ${duration}, Reward: ${rewardPerVoter}`);
+      
+      // Parse reward to USDT decimals (6)
+      const rewardPerVoterWei = rewardPerVoter > 0 
+        ? ethers.utils.parseUnits(rewardPerVoter.toString(), 6) 
+        : 0;
       
       // Create the poll with proper gas settings
       const tx = await this.factoryContract.createPoll(
         title,
         options,
         duration,
+        rewardPerVoterWei,
         this.gasSettings
       );
+      
+      console.log(`Poll creation transaction submitted: ${tx.hash}`);
       
       // Wait for the transaction to be mined
       const receipt = await tx.wait();
@@ -105,6 +65,8 @@ class ContractService {
       // Extract the poll address from the event
       const event = receipt.events.find(e => e.event === 'PollCreated');
       const pollAddress = event.args.pollAddress;
+      
+      console.log(`Poll created at ${pollAddress}`);
       
       return {
         transactionHash: receipt.transactionHash,
@@ -115,21 +77,51 @@ class ContractService {
       throw error;
     }
   }
-
-  /**
-   * Get poll details from the blockchain
-   * @param {string} pollAddress - Address of the poll contract
-   * @return {object} Poll details
-   */
-  async getPollDetails(pollAddress) {
+  
+  // Fund poll with rewards
+  async fundPollRewards(pollAddress, amount) {
     try {
+      console.log(`Funding poll ${pollAddress} with ${amount} USDT`);
+      
+      // Parse amount to USDT decimals (6)
+      const amountWei = ethers.utils.parseUnits(amount.toString(), 6);
+      
+      // Get poll contract instance
       const pollContract = new ethers.Contract(
         pollAddress,
-        PollABI,
+        Poll.abi,
+        this.platformWallet
+      );
+      
+      // Fund rewards
+      const tx = await pollContract.fundRewards(amountWei, this.gasSettings);
+      console.log(`Fund rewards transaction submitted: ${tx.hash}`);
+      
+      const receipt = await tx.wait();
+      console.log(`Poll funded successfully: ${receipt.transactionHash}`);
+      
+      return {
+        transactionHash: receipt.transactionHash,
+        success: true
+      };
+    } catch (error) {
+      console.error('Error funding poll rewards:', error);
+      throw error;
+    }
+  }
+  
+  // Get poll details
+  async getPollDetails(pollAddress) {
+    try {
+      console.log(`Getting details for poll ${pollAddress}`);
+      
+      const pollContract = new ethers.Contract(
+        pollAddress,
+        Poll.abi,
         this.provider
       );
       
-      // Get poll data
+      // Get basic poll info
       const title = await pollContract.title();
       const options = await pollContract.getOptions();
       const isActive = await pollContract.isPollActive();
@@ -139,145 +131,82 @@ class ContractService {
       const endTime = await pollContract.endTime();
       const owner = await pollContract.owner();
       
-      // Format the results
-      const formattedResults = results.map(r => r.toNumber());
+      // Get reward info if USDT is available
+      let rewardPerVoter = ethers.BigNumber.from(0);
+      let totalRewards = ethers.BigNumber.from(0);
       
-      return {
+      try {
+        rewardPerVoter = await pollContract.rewardPerVoter();
+        totalRewards = await pollContract.totalRewards();
+      } catch (err) {
+        console.warn(`This poll doesn't support rewards`, err.message);
+      }
+      
+      // Format results
+      const pollDetails = {
         title,
         options,
         isActive,
-        results: formattedResults,
+        results: results.map(r => r.toNumber()),
         totalVotes: totalVotes.toNumber(),
         creationTime: new Date(creationTime.toNumber() * 1000),
         endTime: endTime.toNumber() > 0 ? new Date(endTime.toNumber() * 1000) : null,
-        owner
+        owner,
+        hasRewards: !rewardPerVoter.isZero(),
+        rewardPerVoter: ethers.utils.formatUnits(rewardPerVoter, 6),
+        totalRewards: ethers.utils.formatUnits(totalRewards, 6)
       };
+      
+      console.log(`Poll details retrieved for ${pollAddress}`);
+      
+      return pollDetails;
     } catch (error) {
-      console.error('Error getting poll details:', error);
+      console.error(`Error getting poll details for ${pollAddress}:`, error);
       throw error;
     }
   }
-
-  /**
-   * Vote on a poll
-   * @param {string} pollAddress - Address of the poll contract
-   * @param {number} option - Option index to vote for
-   * @param {string} userAddress - The user's address
-   * @return {object} Transaction details
-   */
-  async votePoll(pollAddress, option, userAddress) {
+  
+  // Check if user has voted
+  async hasUserVoted(pollAddress, userAddress) {
     try {
       const pollContract = new ethers.Contract(
         pollAddress,
-        PollABI,
-        this.platformWallet
+        Poll.abi,
+        this.provider
       );
       
-      // Check if the user has already voted
+      return await pollContract.hasVoted(userAddress);
+    } catch (error) {
+      console.error(`Error checking if user ${userAddress} voted on poll ${pollAddress}:`, error);
+      throw error;
+    }
+  }
+  
+  // Get user vote
+  async getUserVote(pollAddress, userAddress) {
+    try {
+      const pollContract = new ethers.Contract(
+        pollAddress,
+        Poll.abi,
+        this.provider
+      );
+      
+      // Check if user has voted first
       const hasVoted = await pollContract.hasVoted(userAddress);
       
-      if (hasVoted) {
-        throw new Error('User has already voted on this poll');
+      if (!hasVoted) {
+        return -1; // User hasn't voted
       }
       
-      // Check if user is the poll creator
-      const owner = await pollContract.owner();
-      if (owner.toLowerCase() === userAddress.toLowerCase()) {
-        throw new Error('Poll creator cannot vote on their own poll');
-      }
-      
-      // Vote on the poll with proper gas settings
-      const tx = await pollContract.vote(option, this.gasSettings);
-      const receipt = await tx.wait();
-      
-      return {
-        transactionHash: receipt.transactionHash,
-        success: true
-      };
+      return await pollContract.getUserVote(userAddress);
     } catch (error) {
-      console.error('Error voting on poll:', error);
-      throw error;
+      console.error(`Error getting user vote for ${userAddress} on poll ${pollAddress}:`, error);
+      // Return -1 if there's an error (user hasn't voted)
+      return -1;
     }
   }
-
-  /**
-   * End a poll (owner only)
-   * @param {string} pollAddress - Address of the poll contract
-   * @return {object} Transaction details
-   */
-  async endPoll(pollAddress) {
-    try {
-      const pollContract = new ethers.Contract(
-        pollAddress,
-        PollABI,
-        this.platformWallet
-      );
-      
-      // End the poll with proper gas settings
-      const tx = await pollContract.endPoll(this.gasSettings);
-      const receipt = await tx.wait();
-      
-      return {
-        transactionHash: receipt.transactionHash,
-        success: true
-      };
-    } catch (error) {
-      console.error('Error ending poll:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Reactivate a poll (owner only)
-   * @param {string} pollAddress - Address of the poll contract
-   * @param {number} newDuration - New duration in seconds (0 for no end time)
-   * @return {object} Transaction details
-   */
-  async reactivatePoll(pollAddress, newDuration = 0) {
-    try {
-      const pollContract = new ethers.Contract(
-        pollAddress,
-        PollABI,
-        this.platformWallet
-      );
-      
-      // Reactivate the poll with proper gas settings
-      const tx = await pollContract.reactivatePoll(newDuration, this.gasSettings);
-      const receipt = await tx.wait();
-      
-      return {
-        transactionHash: receipt.transactionHash,
-        success: true
-      };
-    } catch (error) {
-      console.error('Error reactivating poll:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get polls created by a user
-   * @param {string} creatorAddress - Creator's address
-   * @return {string[]} Array of poll addresses
-   */
-  async getPollsByCreator(creatorAddress) {
-    try {
-      if (!this.factoryContract) {
-        throw new Error('Factory contract not initialized');
-      }
-      
-      const pollAddresses = await this.factoryContract.getPollsByCreator(creatorAddress);
-      return pollAddresses;
-    } catch (error) {
-      console.error('Error getting polls by creator:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get all deployed polls
-   * @return {string[]} Array of poll addresses
-   */
+  
+  // Get all polls
   async getAllPolls() {
     try {
       if (!this.factoryContract) {
@@ -285,9 +214,61 @@ class ContractService {
       }
       
       const pollAddresses = await this.factoryContract.getDeployedPolls();
+      console.log(`Retrieved ${pollAddresses.length} polls`);
+      
       return pollAddresses;
     } catch (error) {
       console.error('Error getting all polls:', error);
+      throw error;
+    }
+  }
+  
+  // Get polls by creator
+  async getPollsByCreator(creatorAddress) {
+    try {
+      if (!this.factoryContract) {
+        throw new Error('Factory contract not initialized');
+      }
+      
+      const pollAddresses = await this.factoryContract.getPollsByCreator(creatorAddress);
+      console.log(`Retrieved ${pollAddresses.length} polls created by ${creatorAddress}`);
+      
+      return pollAddresses;
+    } catch (error) {
+      console.error(`Error getting polls for creator ${creatorAddress}:`, error);
+      throw error;
+    }
+  }
+  
+  // Check if user can claim reward
+  async canClaimReward(pollAddress, userAddress) {
+    try {
+      const pollContract = new ethers.Contract(
+        pollAddress,
+        Poll.abi,
+        this.provider
+      );
+      
+      return await pollContract.canClaimReward(userAddress);
+    } catch (error) {
+      console.error(`Error checking if user ${userAddress} can claim reward for poll ${pollAddress}:`, error);
+      return false;
+    }
+  }
+  
+  // Get current nonce for a user
+  async getUserNonce(pollAddress, userAddress) {
+    try {
+      const pollContract = new ethers.Contract(
+        pollAddress,
+        Poll.abi,
+        this.provider
+      );
+      
+      const nonce = await pollContract.getNonce(userAddress);
+      return nonce.toNumber();
+    } catch (error) {
+      console.error(`Error getting nonce for user ${userAddress} on poll ${pollAddress}:`, error);
       throw error;
     }
   }

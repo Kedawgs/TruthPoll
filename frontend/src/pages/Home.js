@@ -1,3 +1,4 @@
+// src/pages/Home.js
 import React, { useEffect, useState, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { Web3Context } from '../context/Web3Context';
@@ -6,11 +7,12 @@ import PollCard from '../components/PollCard';
 const Home = () => {
   const [recentPolls, setRecentPolls] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { getPolls, isConnected } = useContext(Web3Context);
+  const { getPolls, isConnected, openAuthModal } = useContext(Web3Context);
 
   useEffect(() => {
     const fetchRecentPolls = async () => {
       try {
+        setLoading(true);
         const result = await getPolls({ limit: 3, sortBy: 'createdAt', sortOrder: 'desc' });
         setRecentPolls(result.data);
       } catch (error) {
@@ -22,6 +24,15 @@ const Home = () => {
 
     fetchRecentPolls();
   }, [getPolls]);
+
+  const handleCreatePoll = () => {
+    if (!isConnected) {
+      openAuthModal();
+    } else {
+      // Already connected, let them navigate to create-poll page
+      window.location.href = '/create-poll';
+    }
+  };
 
   return (
     <div>
@@ -37,15 +48,12 @@ const Home = () => {
           </p>
           
           <div className="mt-10">
-            {isConnected ? (
-              <Link to="/create-poll" className="btn btn-primary bg-white text-primary-700">
-                Create a Poll
-              </Link>
-            ) : (
-              <div className="text-center">
-                <p className="mb-4">Connect your wallet to create and vote on polls</p>
-              </div>
-            )}
+            <button 
+              onClick={handleCreatePoll}
+              className="btn btn-primary bg-white text-primary-700"
+            >
+              Create a Poll
+            </button>
           </div>
         </div>
       </div>

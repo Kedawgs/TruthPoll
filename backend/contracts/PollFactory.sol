@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-// Import the Poll contract
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "./Poll.sol";
 
-contract PollFactory {
+contract PollFactory is Ownable {
     // Store all created polls
     address[] public deployedPolls;
+    address public immutable usdtAddress;
     
     // Mapping from creator address to their polls
     mapping(address => address[]) public creatorToPolls;
@@ -14,24 +15,32 @@ contract PollFactory {
     // Events
     event PollCreated(address indexed pollAddress, string title, address indexed creator);
     
+    constructor(address _usdtAddress) Ownable(msg.sender) {
+        usdtAddress = _usdtAddress;
+    }
+    
     /**
      * @dev Create a new poll
      * @param _title Poll title
      * @param _options Array of poll options
      * @param _duration Duration in seconds (0 for no end time)
+     * @param _rewardPerVoter USDT reward per voter (0 for no rewards)
      * @return Address of the newly created poll
      */
     function createPoll(
         string memory _title,
         string[] memory _options,
-        uint256 _duration
+        uint256 _duration,
+        uint256 _rewardPerVoter
     ) public returns (address) {
         // Create new poll contract
         Poll newPoll = new Poll(
             _title,
             _options,
             _duration,
-            msg.sender
+            msg.sender,
+            usdtAddress,
+            _rewardPerVoter
         );
         
         address pollAddress = address(newPoll);
