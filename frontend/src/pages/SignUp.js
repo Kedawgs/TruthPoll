@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Web3Context } from '../context/Web3Context';
 import createMagicInstance from '../config/magic';
 import googleIcon from '../assets/google-icon.svg';
@@ -10,72 +10,17 @@ import phantomIcon from '../assets/phantom-icon.svg';
 const SignUp = () => {
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
-  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [showEmailInput, setShowEmailInput] = useState(true); // Set to true to prioritize email login
   
   const { 
     loginWithMagic, 
     connectWalletWithProvider, 
     loading, 
     error, 
-    isConnected,
-    completeMagicOAuthLogin
+    isConnected 
   } = useContext(Web3Context);
   
   const navigate = useNavigate();
-  const location = useLocation();
-  
-  // Improved OAuth redirect handling
-  useEffect(() => {
-    const handleOAuthRedirect = async () => {
-      try {
-        // Check if we're in an OAuth redirect
-        const searchParams = new URLSearchParams(window.location.search);
-        const isOAuthRedirect = searchParams.has('magic_oauth_request_id');
-        
-        if (isOAuthRedirect) {
-          console.log("Found OAuth redirect parameters. Attempting to finalize login...");
-          
-          // Get a Magic instance
-          const magicInstance = createMagicInstance();
-          
-          if (magicInstance) {
-            try {
-              // This gets the result of the redirect
-              console.log("Getting OAuth redirect result...");
-              const result = await magicInstance.oauth.getRedirectResult();
-              console.log("OAuth result received:", !!result);
-              
-              if (result) {
-                // This should set up the user's session
-                const userMetadata = await magicInstance.user.getMetadata();
-                console.log("User authenticated:", userMetadata);
-                
-                // Check if logged in
-                const isLoggedIn = await magicInstance.user.isLoggedIn();
-                console.log("User is logged in:", isLoggedIn);
-                
-                // Complete login via context
-                await completeMagicOAuthLogin();
-                
-                // Force a reload to ensure everything updates correctly
-                window.location.href = '/';
-              } else {
-                console.error("No OAuth result received");
-              }
-            } catch (error) {
-              console.error("Error processing OAuth redirect:", error);
-            }
-          } else {
-            console.error("Magic instance not available for OAuth redirect");
-          }
-        }
-      } catch (error) {
-        console.error("Error handling OAuth redirect:", error);
-      }
-    };
-    
-    handleOAuthRedirect();
-  }, [completeMagicOAuthLogin]);
   
   // Redirect if already connected
   useEffect(() => {
@@ -102,19 +47,18 @@ const SignUp = () => {
   
   const handleGoogleLogin = async () => {
     try {
-      console.log("Starting Google login flow");
       const magicInstance = createMagicInstance();
       
-      if (!magicInstance) {
-        console.error("Magic instance not available for Google login");
-        return;
-      }
+      if (!magicInstance) return;
       
-      console.log("Redirecting to Google OAuth...");
-      // Use the dedicated callback route
+      // Generate and store a consistent state parameter
+      const state = `magic-${Date.now()}`;
+      localStorage.setItem('magic_oauth_state', state);
+      
       await magicInstance.oauth.loginWithRedirect({
         provider: 'google',
-        redirectURI: `${window.location.origin}/magic-callback`
+        redirectURI: `${window.location.origin}/magic-callback`,
+        state
       });
     } catch (error) {
       console.error("Error starting Google login:", error);
@@ -132,7 +76,7 @@ const SignUp = () => {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="w-full max-w-md bg-white rounded-lg shadow-md p-8">
-        <h2 className="text-2xl font-bold text-center mb-6">Sign Up</h2>
+        <h2 className="text-2xl font-bold text-center mb-6">Sign In / Sign Up</h2>
         
         {error && (
           <div className="mb-4 p-3 bg-red-100 border-l-4 border-red-500 text-red-700">
@@ -170,7 +114,7 @@ const SignUp = () => {
               onClick={() => setShowEmailInput(false)}
               className="w-full mt-2 text-center text-sm text-gray-600 hover:text-gray-800"
             >
-              Back to Login Options
+              Other Login Options
             </button>
           </form>
         ) : (
@@ -237,9 +181,6 @@ const SignUp = () => {
             <span>•</span>
             <a href="/terms" className="hover:text-gray-900">Terms</a>
           </div>
-          <p className="mt-2">
-            This site is protected by hCaptcha and its Privacy Policy and Terms of Service apply.
-          </p>
         </div>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import createMagicInstance from '../config/magic';
 
 const MagicRedirect = () => {
-  const [status, setStatus] = useState('Processing authentication...');
+  const [status, setStatus] = useState('Finalizing authentication...');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -13,41 +13,47 @@ const MagicRedirect = () => {
         const magic = createMagicInstance();
         
         if (!magic) {
-          setStatus('Error: Magic SDK not initialized');
+          setStatus('Authentication error: Magic SDK not initialized');
+          setTimeout(() => navigate('/signup'), 2000);
           return;
         }
         
-        // Just focus on completing the redirect
-        console.log("Finishing OAuth flow...");
-        
         try {
-          // Just get the redirect result - don't try to get metadata yet
-          const result = await magic.oauth.getRedirectResult();
-          console.log("OAuth result obtained:", result);
+          // Try to get the redirect result
+          await magic.oauth.getRedirectResult();
+          console.log("OAuth redirect successful");
+        } catch (oauthError) {
+          // Log the error but continue checking if we're logged in anyway
+          console.error('OAuth redirect error:', oauthError);
           
-          // Check if the user is logged in without using getMetadata
+          // Only show the error message if it's not the state parameter mismatch
+          if (!oauthError.message || !oauthError.message.includes('OAuth state parameter mismatches')) {
+            setStatus(`Authentication error: ${oauthError.message}`);
+            setTimeout(() => navigate('/signup'), 2000);
+            return;
+          }
+          
+          // For state parameter mismatch, continue to check login status
+          console.log("Continuing despite OAuth state parameter mismatch...");
+        }
+        
+        // Check if the user is logged in regardless of OAuth errors
+        try {
           const isLoggedIn = await magic.user.isLoggedIn();
           console.log("User logged in status:", isLoggedIn);
           
           if (isLoggedIn) {
-            // Success! Redirect to home page
-            console.log("Authentication successful, redirecting to home");
-            window.location.href = '/';
+            // We're logged in despite any errors, redirect to home
+            setStatus('Authentication successful! Redirecting...');
+            setTimeout(() => window.location.href = '/', 1000);
           } else {
-            // Something went wrong but no error was thrown
-            setStatus('Authentication completed but login failed. Redirecting back to signup...');
+            // Not logged in, go back to signup
+            setStatus('Authentication failed. Please try again.');
             setTimeout(() => navigate('/signup'), 2000);
           }
-        } catch (oauthError) {
-          console.error("OAuth flow error:", oauthError);
-          
-          // Handle the OAuth state parameter mismatch error specifically
-          if (oauthError.message && oauthError.message.includes('OAuth state parameter mismatches')) {
-            setStatus('Authentication error: Session expired or invalid. Please try again.');
-          } else {
-            setStatus(`Authentication error: ${oauthError.message}`);
-          }
-          
+        } catch (loginCheckError) {
+          console.error("Error checking login status:", loginCheckError);
+          setStatus('Error verifying authentication. Please try again.');
           setTimeout(() => navigate('/signup'), 2000);
         }
       } catch (error) {
@@ -62,11 +68,16 @@ const MagicRedirect = () => {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="w-full max-w-md bg-white rounded-lg shadow-md p-8 text-center">
-        <h2 className="text-2xl font-bold mb-4">Magic Authentication</h2>
-        <p>{status}</p>
+    <div className="w-full max-w-md bg-white rounded-lg shadow-md p-8 text-center">
+      <h2 className="text-2xl font-bold mb-4">Magic Authentication</h2>
+      <p className="mb-4">{status}</p>
+      
+      {/* Add a loading spinner */}
+      <div className="flex justify-center my-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-600"></div>
       </div>
     </div>
+  </div>
   );
 };
 

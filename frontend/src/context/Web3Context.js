@@ -19,62 +19,97 @@ export const Web3Provider = ({ children }) => {
 
   // Check on mount if user is already connected via Magic
   useEffect(() => {
-    const checkMagicAuth = async () => {
-      try {
-        console.log("Checking for existing Magic session...");
-        const magicInstance = createMagicInstance();
+    checkMagicAuth();
+  }, []);
+
+  const checkMagicAuth = async () => {
+    try {
+      console.log("Checking for existing Magic session...");
+      const magicInstance = createMagicInstance();
+      
+      if (magicInstance) {
+        setMagic(magicInstance);
         
-        if (magicInstance) {
-          setMagic(magicInstance);
-          
-          // Check if user is already logged in with Magic
-          const isLoggedIn = await magicInstance.user.isLoggedIn();
-          console.log("Magic user is logged in:", isLoggedIn);
-          
-          if (isLoggedIn) {
-            // If getMetadata isn't available, we can work with what we have
+        // Check if user is already logged in with Magic
+        const isLoggedIn = await magicInstance.user.isLoggedIn();
+        console.log("Magic user is logged in:", isLoggedIn);
+        
+        if (isLoggedIn) {
+          try {
             // Get the Ethereum provider from Magic
             const magicProvider = new ethers.providers.Web3Provider(magicInstance.rpcProvider);
             
-            // Get the signer address directly from the provider
-            const signer = magicProvider.getSigner();
-            const userAddress = await signer.getAddress();
+            // Use getInfo instead of getMetadata
+            const userMetadata = await magicInstance.user.getInfo();
+            const userAddress = userMetadata.publicAddress;
             
-            console.log("Got user address from provider:", userAddress);
+            console.log("Got user info:", userMetadata);
             
             // Update state with user info
             setProvider(magicProvider);
             setAccount(userAddress);
-            setSigner(signer);
+            setSigner(magicProvider.getSigner());
             setIsConnected(true);
             setAuthType('magic');
             setProxyWallet(userAddress);
             
             console.log("Magic session restored successfully");
-          } else if (window.ethereum) {
-            // Check for wallet connection
-            await initWalletConnection();
+          } catch (metadataError) {
+            console.error("Error getting user info:", metadataError);
+            // Try alternative method to get user address
+            try {
+              const magicProvider = new ethers.providers.Web3Provider(magicInstance.rpcProvider);
+              const signer = magicProvider.getSigner();
+              const userAddress = await signer.getAddress();
+              
+              setProvider(magicProvider);
+              setAccount(userAddress);
+              setSigner(signer);
+              setIsConnected(true);
+              setAuthType('magic');
+              setProxyWallet(userAddress);
+            } catch (signerError) {
+              console.error("Error getting address from signer:", signerError);
+            }
           }
         } else if (window.ethereum) {
           // Check for wallet connection
           await initWalletConnection();
         }
-        
-        setLoading(false);
-      } catch (error) {
-        console.error("Error checking Magic auth:", error);
-        
-        // Fall back to checking wallet
-        if (window.ethereum) {
-          await initWalletConnection();
-        }
-        
-        setLoading(false);
+      } else if (window.ethereum) {
+        // Check for wallet connection
+        await initWalletConnection();
       }
-    };
-    
-    checkMagicAuth();
-  }, []);
+      
+      setLoading(false);
+    } catch (error) {
+      console.error("Error checking Magic auth:", error);
+      
+      // Fall back to checking wallet
+      if (window.ethereum) {
+        await initWalletConnection();
+      }
+      
+      setLoading(false);
+    }
+  };
+
+  const persistSession = async (userInfo) => {
+    try {
+      // Store minimal session info in localStorage
+      const sessionData = {
+        address: userInfo.publicAddress,
+        email: userInfo.email,
+        authType: 'magic',
+        lastLogin: Date.now()
+      };
+      
+      localStorage.setItem('auth_session', JSON.stringify(sessionData));
+      console.log("Session persisted to localStorage");
+    } catch (error) {
+      console.error("Error persisting session:", error);
+    }
+  };
 
   const initWalletConnection = async () => {
     try {
@@ -109,6 +144,75 @@ export const Web3Provider = ({ children }) => {
       console.log("Wallet initialization complete");
     } catch (error) {
       console.error('Error initializing wallet:', error);
+    }
+  };
+
+  const loginWithMagic = async (method, params) => {
+    try {
+      setLoading(true);
+      console.log(`Starting Magic login with ${method}...`);
+      
+      const magicInstance = createMagicInstance();
+      setMagic(magicInstance);
+      
+      if (!magicInstance) {
+        throw new Error('Magic not initialized');
+      }
+      
+      if (method === 'email') {
+        try {
+          await magicInstance.auth.loginWithMagicLink({ email: params.email });
+          console.log("Email login successful");
+          
+          // Get user metadata
+          const userMetadata = await magicInstance.user.getMetadata();
+          console.log("User metadata:", userMetadata);
+          
+          // Get Magic provider
+          const magicProvider = new ethers.providers.Web3Provider(magicInstance.rpcProvider);
+          
+          // Set account and related data
+          setAccount(userMetadata.publicAddress);
+          setProvider(magicProvider);
+          setSigner(magicProvider.getSigner());
+          setIsConnected(true);
+          setAuthType('magic');
+          setProxyWallet(userMetadata.publicAddress);
+          
+          setLoading(false);
+          return true;
+        } catch (error) {
+          console.error('Error in email login:', error);
+          setError('Failed to log in: ' + error.message);
+          setLoading(false);
+          return false;
+        }
+      } else if (method === 'google') {
+        console.log("Starting Google OAuth flow...");
+        
+        try {
+          // For OAuth, we redirect to the callback route
+          await magicInstance.oauth.loginWithRedirect({
+            provider: 'google',
+            redirectURI: `${window.location.origin}/magic-callback`
+          });
+          
+          // This won't execute as the page will redirect
+          return false;
+        } catch (oauthError) {
+          console.error('OAuth error:', oauthError);
+          setError('Failed to start OAuth flow: ' + oauthError.message);
+          setLoading(false);
+          return false;
+        }
+      } else {
+        throw new Error('Unsupported login method');
+      }
+    } catch (error) {
+      console.error('Error logging in with Magic:', error);
+      setError('Failed to log in: ' + error.message);
+      setLoading(false);
+      return false;
     }
   };
 
@@ -156,91 +260,6 @@ export const Web3Provider = ({ children }) => {
     } catch (error) {
       console.error('Error connecting with Magic:', error);
       setError('Failed to connect with Magic: ' + error.message);
-      return false;
-    }
-  };
-
-  const loginWithMagic = async (method, params) => {
-    try {
-      setLoading(true);
-      console.log(`Starting Magic login with ${method}...`);
-      
-      const magicInstance = createMagicInstance();
-      setMagic(magicInstance);
-      
-      if (!magicInstance) {
-        throw new Error('Magic not initialized');
-      }
-      
-      if (method === 'email') {
-        await magicInstance.auth.loginWithMagicLink({ email: params.email });
-        console.log("Email login successful, connecting...");
-        const success = await connectWithMagic(magicInstance);
-        setLoading(false);
-        return success;
-      } else if (method === 'google') {
-        console.log("Starting Google OAuth flow...");
-        
-        // For OAuth, we just redirect and don't wait for the result here
-        await magicInstance.oauth.loginWithRedirect({
-          provider: 'google',
-          redirectURI: window.location.origin
-        });
-        
-        // This won't execute as the page will redirect
-        console.log("Google OAuth started, redirecting...");
-        return false;
-      } else {
-        throw new Error('Unsupported login method');
-      }
-    } catch (error) {
-      console.error('Error logging in with Magic:', error);
-      setError('Failed to log in: ' + error.message);
-      setLoading(false);
-      return false;
-    }
-  };
-
-  const completeMagicOAuthLogin = async () => {
-    try {
-      console.log("Completing Magic OAuth login...");
-      const magicInstance = createMagicInstance();
-      setMagic(magicInstance);
-      
-      if (!magicInstance) {
-        console.error('Magic not initialized in completeMagicOAuthLogin');
-        return false;
-      }
-      
-      // Get redirect result
-      console.log("Getting OAuth redirect result...");
-      const result = await magicInstance.oauth.getRedirectResult();
-      console.log("OAuth result:", result);
-      
-      if (result) {
-        console.log("OAuth successful, connecting with Magic...");
-        const success = await connectWithMagic(magicInstance);
-        
-        if (success) {
-          console.log("Magic connection after OAuth successful");
-          
-          // Force a manual state update to ensure UI reflects the auth state
-          setTimeout(() => {
-            setIsConnected(true);
-            setAuthType('magic');
-          }, 100);
-          
-          return true;
-        } else {
-          console.error("Failed to connect with Magic after OAuth");
-          return false;
-        }
-      } else {
-        console.error("No result from OAuth redirect");
-        return false;
-      }
-    } catch (error) {
-      console.error('Error completing OAuth login:', error);
       return false;
     }
   };
@@ -481,7 +500,7 @@ export const Web3Provider = ({ children }) => {
         connectWallet,
         connectWalletWithProvider,
         loginWithMagic,
-        completeMagicOAuthLogin,
+        completeMagicOAuthLogin: connectWithMagic,
         logout,
         createPoll,
         getPolls,

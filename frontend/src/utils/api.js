@@ -3,7 +3,7 @@ import createMagicInstance from '../config/magic';
 
 // Create an axios instance with the correct base URL
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api'  // Make sure /api is included
+  baseURL: 'http://localhost:5000/api'
 });
 
 // Add a request interceptor to include auth token
@@ -16,13 +16,19 @@ api.interceptors.request.use(async (config) => {
       const isLoggedIn = await magic.user.isLoggedIn();
       
       if (isLoggedIn) {
-        // Get DID token
-        const token = await magic.user.getIdToken();
-        config.headers.Authorization = `Bearer ${token}`;
+        try {
+          // Get DID token
+          const token = await magic.user.getIdToken();
+          if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
+        } catch (tokenError) {
+          console.error('Error getting auth token:', tokenError);
+        }
       }
     }
   } catch (error) {
-    console.error('Error setting auth token:', error);
+    console.error('Error in auth interceptor:', error);
   }
   
   return config;

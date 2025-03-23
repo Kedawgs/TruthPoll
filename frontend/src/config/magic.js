@@ -1,6 +1,5 @@
 import { Magic } from 'magic-sdk';
 import { OAuthExtension } from '@magic-ext/oauth';
-import { ConnectExtension } from '@magic-ext/connect';
 
 // Global Magic instance
 let magicInstance = null;
@@ -15,8 +14,7 @@ const createMagicInstance = () => {
       
       magicInstance = new Magic(process.env.REACT_APP_MAGIC_PUBLISHABLE_KEY, {
         extensions: [
-          new OAuthExtension(),
-          new ConnectExtension()
+          new OAuthExtension()
         ]
       });
       

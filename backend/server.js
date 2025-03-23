@@ -1,3 +1,4 @@
+require('dotenv').config();
 const app = require('./app');
 
 // Port to run server on
