@@ -27,6 +27,7 @@ app.use('/api/polls', require('./routes/pollRoutes'));
 app.use('/api/wallets', require('./routes/walletRoutes'));
 app.use('/api/contracts', require('./routes/contractRoutes'));
 app.use('/api/auth', require('./routes/authRoutes')); // Add this line
+app.use('/api/smart-wallets', require('./routes/smartWalletRoutes'));
 
 // Basic route
 app.get('/', (req, res) => {

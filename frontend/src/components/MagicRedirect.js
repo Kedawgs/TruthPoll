@@ -68,16 +68,16 @@ const MagicRedirect = () => {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
-    <div className="w-full max-w-md bg-white rounded-lg shadow-md p-8 text-center">
-      <h2 className="text-2xl font-bold mb-4">Magic Authentication</h2>
-      <p className="mb-4">{status}</p>
-      
-      {/* Add a loading spinner */}
-      <div className="flex justify-center my-4">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-600"></div>
+      <div className="w-full max-w-md bg-white rounded-lg shadow-md p-8 text-center">
+        <h2 className="text-2xl font-bold mb-4">Magic Authentication</h2>
+        <p className="mb-4">{status}</p>
+        
+        {/* Add a loading spinner */}
+        <div className="flex justify-center my-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-600"></div>
+        </div>
       </div>
     </div>
-  </div>
   );
 };
 

@@ -8,6 +8,13 @@ class SmartWalletService {
     this.platformWallet = new ethers.Wallet(platformPrivateKey, provider);
     this.factoryAddress = process.env.SMART_WALLET_FACTORY_ADDRESS;
     
+    // Default gas settings for Polygon Amoy testnet
+    this.gasSettings = {
+      maxPriorityFeePerGas: ethers.utils.parseUnits("30", "gwei"),
+      maxFeePerGas: ethers.utils.parseUnits("35", "gwei"),
+      gasLimit: 3000000
+    };
+    
     if (this.factoryAddress) {
       this.factory = new ethers.Contract(
         this.factoryAddress,
@@ -65,11 +72,11 @@ class SmartWalletService {
       
       console.log(`Deploying new smart wallet for ${userAddress}...`);
       
-      // Deploy new wallet
+      // Deploy new wallet with updated gas settings
       const tx = await this.factory.createWallet(
         userAddress, 
         salt,
-        { gasLimit: 1000000 }
+        this.gasSettings // Use the gas settings defined in constructor
       );
       
       console.log(`Deployment transaction submitted: ${tx.hash}`);
@@ -80,6 +87,9 @@ class SmartWalletService {
       return walletAddress;
     } catch (error) {
       console.error('Error deploying wallet:', error);
+      if (error.reason) console.error('Error reason:', error.reason);
+      if (error.code) console.error('Error code:', error.code);
+      if (error.body) console.error('Error response body:', error.body);
       throw error;
     }
   }
@@ -92,6 +102,35 @@ class SmartWalletService {
     } catch (error) {
       console.error('Error checking if wallet is deployed:', error);
       throw error;
+    }
+  }
+  
+  // Get current gas prices from the network
+  async getCurrentGasPrices() {
+    try {
+      const feeData = await this.provider.getFeeData();
+      
+      console.log("Current network gas prices:", {
+        maxFeePerGas: ethers.utils.formatUnits(feeData.maxFeePerGas, "gwei") + " GWEI",
+        maxPriorityFeePerGas: ethers.utils.formatUnits(feeData.maxPriorityFeePerGas, "gwei") + " GWEI"
+      });
+      
+      // Update the gas settings with current values (while ensuring minimums)
+      this.gasSettings = {
+        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.gt(ethers.utils.parseUnits("25", "gwei")) 
+          ? feeData.maxPriorityFeePerGas 
+          : ethers.utils.parseUnits("30", "gwei"),
+        maxFeePerGas: feeData.maxFeePerGas.gt(ethers.utils.parseUnits("30", "gwei"))
+          ? feeData.maxFeePerGas
+          : ethers.utils.parseUnits("35", "gwei"),
+        gasLimit: 3000000
+      };
+      
+      return this.gasSettings;
+    } catch (error) {
+      console.error('Error fetching gas prices:', error);
+      // Return default values if fetching fails
+      return this.gasSettings;
     }
   }
 }

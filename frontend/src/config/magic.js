@@ -12,7 +12,9 @@ const createMagicInstance = () => {
     // Only create the instance once
     if (!magicInstance) {
       console.log("Creating new Magic instance");
-      
+      console.log("Magic key used:", process.env.REACT_APP_MAGIC_PUBLISHABLE_KEY);
+
+
       // Make sure this is exactly your publishable key from Magic Dashboard
       magicInstance = new Magic(process.env.REACT_APP_MAGIC_PUBLISHABLE_KEY, {
         extensions: [

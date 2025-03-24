@@ -27,6 +27,10 @@ const AuthModal = ({ isOpen, onClose }) => {
       return;
     }
     
+    // Add logging here
+    console.log("Attempting login with email:", email);
+    console.log("Magic API Key:", process.env.REACT_APP_MAGIC_PUBLISHABLE_KEY);
+    
     setEmailError('');
     const success = await loginWithMagic('email', { email });
     

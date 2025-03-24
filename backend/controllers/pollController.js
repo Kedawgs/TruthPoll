@@ -204,8 +204,20 @@ exports.getPoll = async (req, res) => {
 // Vote on a poll - unified handler for both Magic and non-Magic users
 exports.votePoll = async (req, res) => {
   try {
+    console.log("====== VOTE POLL REQUEST RECEIVED ======");
+    console.log("Poll ID:", req.params.id);
+    console.log("Request body:", req.body);
+    console.log("Auth user:", req.user);
+    
     const { optionIndex, voterAddress, signature } = req.body;
     const { isMagicUser } = req.user || {};
+
+    console.log("Parsed vote data:", { 
+      optionIndex, 
+      voterAddress, 
+      signatureLength: signature?.length,
+      isMagicUser 
+    });
 
     if (optionIndex === undefined || !voterAddress || !signature) {
       return res.status(400).json({
@@ -230,8 +242,18 @@ exports.votePoll = async (req, res) => {
       });
     }
 
+    console.log("Poll found in database:", {
+      id: poll._id,
+      title: poll.title,
+      contractAddress: poll.contractAddress,
+      creator: poll.creator
+    });
+
     // Check if user is the poll creator
-    if (poll.creator.toLowerCase() === voterAddress.toLowerCase()) {
+    const isCreator = poll.creator.toLowerCase() === voterAddress.toLowerCase();
+    console.log("Is voter the creator?", isCreator);
+    
+    if (isCreator) {
       return res.status(400).json({
         success: false,
         error: 'Poll creator cannot vote on their own poll'
@@ -240,6 +262,9 @@ exports.votePoll = async (req, res) => {
 
     // For Magic users, verify user is authenticated
     if (isMagicUser) {
+      console.log("Authenticated Magic user:", req.user.publicAddress);
+      console.log("Voter address:", voterAddress);
+      
       if (req.user.publicAddress.toLowerCase() !== voterAddress.toLowerCase()) {
         return res.status(403).json({
           success: false,
@@ -249,39 +274,94 @@ exports.votePoll = async (req, res) => {
       
       console.log("Handling Magic user vote");
       
-      // Relay the transaction directly
-      const result = await relayerService.relayMagicVote(
-        poll.contractAddress,
-        voterAddress,
-        optionIndex,
-        signature
-      );
-      
-      res.status(200).json({
-        success: true,
-        data: result
-      });
+      try {
+        // For testing, try direct vote first
+        /*
+        console.log("TESTING: Attempting direct vote by platform wallet");
+        const directResult = await relayerService.directVote(
+          poll.contractAddress,
+          optionIndex
+        );
+        console.log("Direct vote result:", directResult);
+        */
+        
+        // Relay the transaction 
+        console.log("Relaying Magic vote transaction");
+        const result = await relayerService.relayMagicVote(
+          poll.contractAddress,
+          voterAddress,
+          optionIndex,
+          signature
+        );
+        
+        console.log("Relay vote result:", result);
+        
+        res.status(200).json({
+          success: true,
+          data: result
+        });
+      } catch (relayError) {
+        console.error("Error in vote relay:", relayError);
+        console.error("Stack trace:", relayError.stack);
+        
+        // Try to provide a more helpful error message
+        let errorMessage = relayError.message || 'Server Error';
+        
+        if (errorMessage.includes("Poll creator cannot vote")) {
+          errorMessage = "Poll creator cannot vote on their own poll";
+        } else if (errorMessage.includes("Already voted")) {
+          errorMessage = "You have already voted on this poll";
+        } else if (errorMessage.includes("Poll is not active")) {
+          errorMessage = "This poll is not active";
+        } else if (errorMessage.includes("Poll has ended")) {
+          errorMessage = "This poll has ended";
+        } else if (errorMessage.includes("Invalid option")) {
+          errorMessage = "Invalid option selected";
+        } else if (errorMessage.includes("Invalid signature")) {
+          errorMessage = "Invalid signature. Please try again.";
+        }
+
+        return res.status(500).json({
+          success: false,
+          error: errorMessage,
+          originalError: relayError.message
+        });
+      }
     } else {
       console.log("Handling non-Magic user vote");
       
       // For non-Magic users - use smart wallet
-      const smartWalletAddress = await smartWalletService.deployWalletIfNeeded(voterAddress);
-      
-      // Relay through smart wallet
-      const result = await relayerService.relaySmartWalletVote(
-        smartWalletAddress,
-        poll.contractAddress,
-        optionIndex,
-        signature
-      );
-      
-      res.status(200).json({
-        success: true,
-        data: result
-      });
+      try {
+        const smartWalletAddress = await smartWalletService.deployWalletIfNeeded(voterAddress);
+        console.log("Smart wallet address:", smartWalletAddress);
+        
+        // Relay through smart wallet
+        const result = await relayerService.relaySmartWalletVote(
+          smartWalletAddress,
+          poll.contractAddress,
+          optionIndex,
+          signature
+        );
+        
+        console.log("Smart wallet vote result:", result);
+        
+        res.status(200).json({
+          success: true,
+          data: result
+        });
+      } catch (walletError) {
+        console.error("Error in smart wallet vote:", walletError);
+        console.error("Stack trace:", walletError.stack);
+        
+        return res.status(500).json({
+          success: false,
+          error: walletError.message || 'Failed to vote using smart wallet'
+        });
+      }
     }
   } catch (error) {
     console.error('Error voting on poll:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
       error: error.message || 'Server Error'

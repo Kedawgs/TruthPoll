@@ -169,53 +169,71 @@ export const Web3Provider = ({ children }) => {
     window.location.reload();
   };
   
-  // Connect wallet
-  const connectWallet = async () => {
-    try {
-      if (!window.ethereum) {
-        setError('MetaMask is not installed. Please install it to use this app.');
-        return false;
-      }
-      
-      setLoading(true);
-      
-      // Request account access
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      
-      if (accounts.length > 0) {
-        // Create provider if not exists
-        if (!provider) {
-          const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
-          setProvider(web3Provider);
-          setSigner(web3Provider.getSigner());
-          
-          // Get network
-          const network = await web3Provider.getNetwork();
-          setChainId(network.chainId);
-        } else {
-          setSigner(provider.getSigner());
-        }
-        
-        setAccount(accounts[0]);
-        setIsConnected(true);
-        setAuthType('wallet');
-        
-        // Get smart wallet address
-        await getSmartWalletAddress(accounts[0]);
-        
-        setLoading(false);
-        return true;
-      }
-      
-      setLoading(false);
-      return false;
-    } catch (error) {
-      console.error("Error connecting wallet:", error);
-      setError('Failed to connect wallet');
-      setLoading(false);
+// Connect wallet
+const connectWallet = async () => {
+  try {
+    if (!window.ethereum) {
+      setError('MetaMask is not installed. Please install it to use this app.');
       return false;
     }
-  };
+    
+    setLoading(true);
+    
+    // Request account access
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    console.log("Connected accounts:", accounts);
+    
+    if (accounts.length > 0) {
+      // Create provider if not exists
+      if (!provider) {
+        const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+        setProvider(web3Provider);
+        
+        // Get network
+        const network = await web3Provider.getNetwork();
+        setChainId(network.chainId);
+        console.log("Connected to network:", network);
+        
+        // Explicitly set signer
+        const newSigner = web3Provider.getSigner();
+        setSigner(newSigner);
+        
+        // Verify signer works
+        try {
+          const signerAddress = await newSigner.getAddress();
+          console.log("Signer address verified:", signerAddress);
+        } catch (signerError) {
+          console.error("Signer error:", signerError);
+          setError('Failed to access wallet. Please reconnect.');
+          setLoading(false);
+          return false;
+        }
+      } else {
+        // If provider exists, refresh signer
+        const refreshedSigner = provider.getSigner();
+        setSigner(refreshedSigner);
+      }
+      
+      setAccount(accounts[0]);
+      setIsConnected(true);
+      setAuthType('wallet');
+      
+      // Get smart wallet address
+      await getSmartWalletAddress(accounts[0]);
+      
+      setLoading(false);
+      return true;
+    }
+    
+    setLoading(false);
+    return false;
+  } catch (error) {
+    console.error("Error connecting wallet:", error);
+    setError('Failed to connect wallet');
+    setLoading(false);
+    return false;
+  }
+};
   
   // Login with Magic
   const loginWithMagic = async (method, params) => {
@@ -279,10 +297,33 @@ export const Web3Provider = ({ children }) => {
         throw new Error('Wallet not connected');
       }
       
+      // Add these checks
+      if (!account) {
+        throw new Error('No account available. Please reconnect your wallet.');
+      }
+      
+      if (!signer) {
+        // Try to refresh the signer if it's not available
+        if (provider) {
+          setSigner(provider.getSigner());
+        } else {
+          throw new Error('Provider not initialized');
+        }
+      }
+  
       // Get poll contract address
       const pollResponse = await getPoll(id);
       const pollAddress = pollResponse.data.contractAddress;
       
+      // Add explicit logging
+      console.log("Preparing to sign vote with:", {
+        id,
+        optionIndex,
+        pollAddress,
+        account,
+        authType
+      });
+  
       // Sign the vote
       let signature;
       
@@ -311,19 +352,30 @@ export const Web3Provider = ({ children }) => {
   // Sign a vote with Magic
   const signMagicVote = async (pollAddress, optionIndex) => {
     try {
+      console.log("====== DEBUG SIGN MAGIC VOTE ======");
+      console.log("Parameters:", { pollAddress, optionIndex, account });
+  
       // Get user's nonce
       const nonceResponse = await api.get(`/polls/nonce/${pollAddress}/${account}`);
       const nonce = nonceResponse.data.data.nonce;
+      console.log("Fetched nonce:", nonce);
       
-      // Create domain data
+      // Get network ID
+      const network = await provider.getNetwork();
+      const actualChainId = network.chainId;
+      console.log("Actual chain ID:", actualChainId);
+  
+      // Create domain data - IMPORTANT: Must match the contract exactly
       const domain = {
         name: 'TruthPoll',
         version: '1',
-        chainId: chainId || 80002, // Polygon Amoy
+        chainId: 80002,
         verifyingContract: pollAddress
       };
       
-      // Define types
+      console.log("Domain data:", domain);
+  
+      // Define types - IMPORTANT: Must match the contract exactly
       const types = {
         Vote: [
           { name: 'voter', type: 'address' },
@@ -332,20 +384,43 @@ export const Web3Provider = ({ children }) => {
         ]
       };
       
-      // Create value
+      // Create value - Make sure to use correct types
       const value = {
         voter: account,
         option: optionIndex,
         nonce: nonce
       };
       
+      console.log("Value to sign:", value);
+      
       // Sign typed data
       const signer = provider.getSigner();
+      console.log("Getting signer address...");
+      const signerAddress = await signer.getAddress();
+      console.log("Signer address:", signerAddress);
+      
+      console.log("Signing typed data...");
       const signature = await signer._signTypedData(domain, types, value);
+      console.log("Signature generated:", signature);
+      
+      // Verify the signature (optional but recommended for debugging)
+      try {
+        // Recover signer from signature
+        const recoveredAddress = ethers.utils.verifyTypedData(domain, types, value, signature);
+        console.log("Recovered address:", recoveredAddress);
+        console.log("Signature verification:", recoveredAddress.toLowerCase() === account.toLowerCase());
+      } catch (verifyError) {
+        console.error("Error verifying signature:", verifyError);
+      }
       
       return signature;
     } catch (error) {
       console.error("Error signing with Magic:", error);
+      console.error("Error details:", {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       throw error;
     }
   };
@@ -353,6 +428,24 @@ export const Web3Provider = ({ children }) => {
   // Sign a vote with wallet
   const signWalletVote = async (pollAddress, optionIndex) => {
     try {
+      console.log("Starting wallet vote signing process...");
+      
+      // Make sure we have an ethereum provider
+      if (!window.ethereum) {
+        throw new Error("MetaMask not found");
+      }
+      
+      // Create a fresh Web3Provider and signer
+      const freshProvider = new ethers.providers.Web3Provider(window.ethereum);
+      
+      // Request account access again to ensure we have permission
+      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      
+      // Get a fresh signer
+      const freshSigner = freshProvider.getSigner();
+      const address = await freshSigner.getAddress();
+      console.log("Signing with address:", address);
+      
       // Create a message hash for the smart wallet to execute
       const pollInterface = new ethers.utils.Interface([
         'function vote(uint256 _option) external'
@@ -360,6 +453,7 @@ export const Web3Provider = ({ children }) => {
       
       // Encode the vote function call
       const callData = pollInterface.encodeFunctionData('vote', [optionIndex]);
+      console.log("Call data created:", callData.substring(0, 20) + "...");
       
       // Create message hash
       const messageHash = ethers.utils.keccak256(
@@ -368,10 +462,11 @@ export const Web3Provider = ({ children }) => {
           [pollAddress, 0, ethers.utils.keccak256(callData)]
         )
       );
+      console.log("Message hash created:", messageHash.substring(0, 20) + "...");
       
-      // Sign the message
-      const signer = provider.getSigner();
-      const signature = await signer.signMessage(ethers.utils.arrayify(messageHash));
+      // Sign the message with fresh signer
+      const signature = await freshSigner.signMessage(ethers.utils.arrayify(messageHash));
+      console.log("Signature obtained:", signature.substring(0, 20) + "...");
       
       return signature;
     } catch (error) {
