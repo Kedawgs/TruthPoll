@@ -9,7 +9,7 @@ const SmartWalletService = require('../services/smartWalletService');
 const provider = new ethers.providers.JsonRpcProvider(process.env.POLYGON_AMOY_RPC_URL);
 
 // Initialize services
-const contractService = new ContractService(provider);
+const contractService = new ContractService(provider, process.env.PLATFORM_WALLET_PRIVATE_KEY);
 const relayerService = new RelayerService(provider, process.env.PLATFORM_WALLET_PRIVATE_KEY);
 const smartWalletService = new SmartWalletService(provider, process.env.PLATFORM_WALLET_PRIVATE_KEY);
 
@@ -219,10 +219,34 @@ exports.votePoll = async (req, res) => {
       isMagicUser 
     });
 
-    if (optionIndex === undefined || !voterAddress || !signature) {
+    // Enhanced validation
+    if (optionIndex === undefined) {
       return res.status(400).json({
         success: false,
-        error: 'Please provide option index, voter address, and signature'
+        error: 'Please provide option index'
+      });
+    }
+    
+    if (!voterAddress) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide voter address'
+      });
+    }
+    
+    if (!signature) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide signature'
+      });
+    }
+
+    // Validate signature format
+    if (!signature.startsWith('0x') || signature.length !== 132) {
+      console.error("Invalid signature format:", signature);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid signature format'
       });
     }
 
@@ -275,16 +299,6 @@ exports.votePoll = async (req, res) => {
       console.log("Handling Magic user vote");
       
       try {
-        // For testing, try direct vote first
-        /*
-        console.log("TESTING: Attempting direct vote by platform wallet");
-        const directResult = await relayerService.directVote(
-          poll.contractAddress,
-          optionIndex
-        );
-        console.log("Direct vote result:", directResult);
-        */
-        
         // Relay the transaction 
         console.log("Relaying Magic vote transaction");
         const result = await relayerService.relayMagicVote(
@@ -332,10 +346,36 @@ exports.votePoll = async (req, res) => {
       
       // For non-Magic users - use smart wallet
       try {
-        const smartWalletAddress = await smartWalletService.deployWalletIfNeeded(voterAddress);
+        // Get or deploy the smart wallet (now with additional verification)
+        console.log("Checking smart wallet for voter:", voterAddress);
+        
+        // First just get the expected address
+        const smartWalletAddress = await smartWalletService.getWalletAddress(voterAddress);
         console.log("Smart wallet address:", smartWalletAddress);
         
+        // Check if it's deployed
+        let isDeployed = await smartWalletService.isWalletDeployed(smartWalletAddress);
+        console.log("Is wallet already deployed?", isDeployed);
+        
+        // Deploy if needed
+        if (!isDeployed) {
+          console.log("Smart wallet not deployed, deploying now...");
+          await smartWalletService.deployWalletIfNeeded(voterAddress);
+          
+          // Verify deployment succeeded
+          isDeployed = await smartWalletService.isWalletDeployed(smartWalletAddress);
+          console.log("Deployment verification:", isDeployed);
+          
+          if (!isDeployed) {
+            throw new Error("Failed to deploy smart wallet");
+          }
+        }
+        
+        // Small delay to ensure everything is synchronized
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         // Relay through smart wallet
+        console.log("Relaying vote through smart wallet...");
         const result = await relayerService.relaySmartWalletVote(
           smartWalletAddress,
           poll.contractAddress,
@@ -353,9 +393,22 @@ exports.votePoll = async (req, res) => {
         console.error("Error in smart wallet vote:", walletError);
         console.error("Stack trace:", walletError.stack);
         
+        // Better error message for wallet voting
+        let errorMessage = walletError.message || 'Failed to vote using smart wallet';
+        
+        // Handle common smart wallet errors
+        if (errorMessage.includes("Invalid signature")) {
+          errorMessage = "Invalid signature. The signed message doesn't match what's expected by the smart wallet.";
+        } else if (errorMessage.includes("Smart wallet not deployed")) {
+          errorMessage = "Smart wallet deployment failed. Please try again.";
+        } else if (errorMessage.includes("Transaction reverted")) {
+          errorMessage = "Vote transaction failed. This could be because you've already voted or the poll is no longer active.";
+        }
+        
         return res.status(500).json({
           success: false,
-          error: walletError.message || 'Failed to vote using smart wallet'
+          error: errorMessage,
+          details: walletError.message
         });
       }
     }
@@ -507,6 +560,15 @@ exports.claimReward = async (req, res) => {
       console.log("Handling non-Magic user reward claim");
       // For non-Magic users - use smart wallet
       const smartWalletAddress = await smartWalletService.getWalletAddress(userAddress);
+      
+      // Verify smart wallet is deployed
+      const isDeployed = await smartWalletService.isWalletDeployed(smartWalletAddress);
+      if (!isDeployed) {
+        await smartWalletService.deployWalletIfNeeded(userAddress);
+        
+        // Wait for deployment confirmation
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
       
       // Relay through smart wallet
       const result = await relayerService.relaySmartWalletRewardClaim(

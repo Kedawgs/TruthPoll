@@ -133,30 +133,56 @@ class RelayerService {
     }
   }
   
-  // For non-Magic users with smart wallets
+  // For non-Magic users with smart wallets - IMPROVED IMPLEMENTATION
   async relaySmartWalletVote(smartWalletAddress, pollAddress, optionIndex, signature) {
     try {
-      console.log(`====== ENHANCED DEBUGGING ======`);
+      console.log(`====== ENHANCED SMART WALLET VOTE DEBUGGING ======`);
       console.log(`Relaying Smart Wallet vote: Wallet=${smartWalletAddress}, Poll=${pollAddress}, Option=${optionIndex}`);
+      console.log(`Signature length: ${signature?.length}`);
+      
+      // Verify the smart wallet is deployed and has code
+      const walletCode = await this.provider.getCode(smartWalletAddress);
+      if (walletCode === '0x') {
+        throw new Error(`Smart wallet at ${smartWalletAddress} is not deployed`);
+      }
+      console.log(`Smart wallet code verified, length: ${(walletCode.length - 2) / 2} bytes`);
       
       // Check poll state to verify vote eligibility
       try {
         const pollContract = new ethers.Contract(
           pollAddress,
           Poll.abi,
-          this.platformWallet
+          this.provider
         );
         
         const isActive = await pollContract.isPollActive();
         const hasVoted = await pollContract.hasVoted(smartWalletAddress);
         const ownerAddress = await pollContract.owner();
         const isCreator = ownerAddress.toLowerCase() === smartWalletAddress.toLowerCase();
+        const options = await pollContract.getOptionsCount();
         
         console.log(`Pre-vote Poll State:`, {
           isActive, 
           hasVoted, 
-          isCreator
+          isCreator,
+          optionsCount: options.toNumber(),
+          requestedOption: optionIndex,
+          validOption: optionIndex < options.toNumber()
         });
+        
+        // Warn about potential failure conditions
+        if (isCreator) {
+          console.error('VOTE WILL FAIL: Smart wallet is the poll creator');
+        }
+        if (hasVoted) {
+          console.error('VOTE WILL FAIL: Smart wallet has already voted on this poll');
+        }
+        if (!isActive) {
+          console.error('VOTE WILL FAIL: Poll is not active');
+        }
+        if (optionIndex >= options.toNumber()) {
+          console.error('VOTE WILL FAIL: Invalid option index');
+        }
       } catch (stateError) {
         console.error('Error checking poll state:', stateError);
       }
@@ -168,26 +194,77 @@ class RelayerService {
         this.platformWallet
       );
       
+      // Verify the smart wallet's owner
+      try {
+        const owner = await smartWallet.owner();
+        console.log(`Smart wallet owner: ${owner}`);
+      } catch (ownerError) {
+        console.error('Error getting smart wallet owner:', ownerError);
+      }
+      
       // Encode the vote function call
       const pollInterface = new ethers.utils.Interface(Poll.abi);
       const callData = pollInterface.encodeFunctionData('vote', [optionIndex]);
       
-      console.log(`Call data encoded: ${callData.slice(0, 50)}...`);
+      console.log(`Call data encoded: ${callData}`);
+      
+      // Parse signature
+      let sigComponents;
+      try {
+        sigComponents = ethers.utils.splitSignature(signature);
+        console.log(`Signature components:`, {
+          v: sigComponents.v,
+          r: sigComponents.r.slice(0, 10) + '...',
+          s: sigComponents.s.slice(0, 10) + '...'
+        });
+      } catch (sigError) {
+        console.error('Error parsing signature:', sigError);
+        throw new Error('Invalid signature format');
+      }
+      
+      // Execute transaction params
+      const executeParams = {
+        target: pollAddress,
+        value: 0,
+        callData,
+        signature
+      };
+      
+      console.log('Execute parameters:', {
+        target: executeParams.target,
+        value: executeParams.value,
+        callDataLength: executeParams.callData.length,
+        signatureLength: executeParams.signature.length
+      });
       
       // Execute through the smart wallet
+      console.log(`Submitting transaction to smart wallet...`);
       const tx = await smartWallet.execute(
-        pollAddress,
-        0, // No value
-        callData,
-        signature,
-        this.gasSettings
+        pollAddress,      // target
+        0,                // value
+        callData,         // data
+        signature,        // signature
+        this.gasSettings  // gas settings
       );
       
       console.log(`Transaction submitted: ${tx.hash}`);
       
-      const receipt = await tx.wait();
+      // Wait for transaction confirmation with timeout
+      console.log('Waiting for transaction confirmation...');
+      const receipt = await Promise.race([
+        tx.wait(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+        )
+      ]);
+      
       console.log(`Transaction confirmed: ${receipt.transactionHash}`);
       console.log(`Transaction status: ${receipt.status} (1=success, 0=failure)`);
+      
+      // Check transaction status
+      if (receipt.status === 0) {
+        throw new Error('Smart wallet transaction reverted on-chain');
+      }
       
       return {
         transactionHash: receipt.transactionHash,
@@ -198,7 +275,7 @@ class RelayerService {
       // Enhanced error logging
       if (error.reason) console.error('Error reason:', error.reason);
       if (error.code) console.error('Error code:', error.code);
-      if (error.receipt) console.error('Transaction receipt status:', error.receipt.status);
+      if (error.receipt) console.error('Transaction receipt status:', error.receipt?.status);
       
       throw error;
     }
@@ -240,10 +317,16 @@ class RelayerService {
     }
   }
   
-  // Claim reward through smart wallet
+  // Claim reward through smart wallet - IMPROVED IMPLEMENTATION
   async relaySmartWalletRewardClaim(smartWalletAddress, pollAddress, signature) {
     try {
       console.log(`Relaying Smart Wallet reward claim: Wallet=${smartWalletAddress}, Poll=${pollAddress}`);
+      
+      // Verify the smart wallet is deployed
+      const walletCode = await this.provider.getCode(smartWalletAddress);
+      if (walletCode === '0x') {
+        throw new Error(`Smart wallet at ${smartWalletAddress} is not deployed`);
+      }
       
       // Get Smart Wallet contract
       const smartWallet = new ethers.Contract(
@@ -255,6 +338,34 @@ class RelayerService {
       // Encode the claimReward function call
       const pollInterface = new ethers.utils.Interface(Poll.abi);
       const callData = pollInterface.encodeFunctionData('claimReward', []);
+      
+      console.log(`Claim reward calldata: ${callData}`);
+      
+      // Check eligibility before trying to claim
+      try {
+        const pollContract = new ethers.Contract(
+          pollAddress,
+          Poll.abi,
+          this.provider
+        );
+        
+        const canClaim = await pollContract.canClaimReward(smartWalletAddress);
+        console.log(`Can claim reward? ${canClaim}`);
+        
+        if (!canClaim) {
+          const hasVoted = await pollContract.hasVoted(smartWalletAddress);
+          const hasClaimedReward = false; // We'd need to check this on the contract
+          const isActive = await pollContract.isPollActive();
+          
+          console.log('Claim eligibility factors:', {
+            hasVoted,
+            hasClaimedReward,
+            isActive
+          });
+        }
+      } catch (checkError) {
+        console.error('Error checking claim eligibility:', checkError);
+      }
       
       // Execute through the smart wallet
       const tx = await smartWallet.execute(
@@ -269,6 +380,11 @@ class RelayerService {
       
       const receipt = await tx.wait();
       console.log(`Transaction confirmed: ${receipt.transactionHash}`);
+      console.log(`Transaction status: ${receipt.status}`);
+      
+      if (receipt.status === 0) {
+        throw new Error('Smart wallet transaction reverted on-chain');
+      }
       
       return {
         transactionHash: receipt.transactionHash,

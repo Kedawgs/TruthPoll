@@ -49,23 +49,32 @@ class SmartWalletService {
     }
   }
   
-  // Deploy wallet if needed
+  // Deploy wallet if needed - IMPROVED WITH CONFIRMATION
   async deployWalletIfNeeded(userAddress) {
     try {
       if (!this.factory) {
         throw new Error('Factory contract not initialized');
       }
       
+      // Get fresh gas settings
+      await this.getCurrentGasPrices();
+      
       // Deterministic salt based on user address
       const salt = ethers.utils.keccak256(
         ethers.utils.defaultAbiCoder.encode(['address'], [userAddress])
       );
       
-      // Check if already deployed
+      // Get the expected wallet address
       const walletAddress = await this.factory.getWalletAddress(userAddress, salt);
-      const code = await this.provider.getCode(walletAddress);
+      console.log(`Expected smart wallet address: ${walletAddress}`);
       
-      if (code !== '0x') {
+      // Check if already deployed
+      const code = await this.provider.getCode(walletAddress);
+      const isDeployed = code !== '0x';
+      
+      console.log(`Smart wallet deployed? ${isDeployed}`);
+      
+      if (isDeployed) {
         console.log(`Smart wallet already deployed at ${walletAddress}`);
         return walletAddress;
       }
@@ -81,9 +90,26 @@ class SmartWalletService {
       
       console.log(`Deployment transaction submitted: ${tx.hash}`);
       
+      // Wait for the transaction to be mined
+      console.log('Waiting for deployment confirmation...');
       const receipt = await tx.wait();
-      console.log(`Smart wallet deployed at ${walletAddress}, tx: ${receipt.transactionHash}`);
       
+      if (receipt.status !== 1) {
+        throw new Error('Smart wallet deployment failed');
+      }
+      
+      console.log(`Smart wallet deployment confirmed, tx: ${receipt.transactionHash}`);
+      
+      // Verify deployment was successful
+      const verifyCode = await this.provider.getCode(walletAddress);
+      if (verifyCode === '0x') {
+        throw new Error('Smart wallet code not found after deployment');
+      }
+      
+      // Wait for a short time to ensure state is updated on the blockchain
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log(`Smart wallet successfully deployed at ${walletAddress}`);
       return walletAddress;
     } catch (error) {
       console.error('Error deploying wallet:', error);
@@ -94,11 +120,17 @@ class SmartWalletService {
     }
   }
   
-  // Check if wallet is deployed
+  // Check if wallet is deployed - ENHANCED WITH MORE DETAILED LOGS
   async isWalletDeployed(walletAddress) {
     try {
+      console.log(`Checking if wallet is deployed at ${walletAddress}...`);
       const code = await this.provider.getCode(walletAddress);
-      return code !== '0x';
+      const isDeployed = code !== '0x';
+      
+      console.log(`Wallet deployment status: ${isDeployed ? 'Deployed' : 'Not deployed'}`);
+      console.log(`Code length: ${(code.length - 2) / 2} bytes`);
+      
+      return isDeployed;
     } catch (error) {
       console.error('Error checking if wallet is deployed:', error);
       throw error;

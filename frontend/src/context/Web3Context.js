@@ -425,7 +425,7 @@ const connectWallet = async () => {
     }
   };
   
-  // Sign a vote with wallet
+  // Sign a vote with wallet - UPDATED METHOD
   const signWalletVote = async (pollAddress, optionIndex) => {
     try {
       console.log("Starting wallet vote signing process...");
@@ -453,20 +453,40 @@ const connectWallet = async () => {
       
       // Encode the vote function call
       const callData = pollInterface.encodeFunctionData('vote', [optionIndex]);
-      console.log("Call data created:", callData.substring(0, 20) + "...");
+      console.log("Call data created:", callData);
       
-      // Create message hash
+      // IMPORTANT: Use solidityPack instead of defaultAbiCoder to match the contract's encoding
+      // Create message hash to match the smart wallet contract's expected format
       const messageHash = ethers.utils.keccak256(
-        ethers.utils.defaultAbiCoder.encode(
+        ethers.utils.solidityPack(
           ['address', 'uint256', 'bytes32'],
-          [pollAddress, 0, ethers.utils.keccak256(callData)]
+          [pollAddress, ethers.constants.Zero, ethers.utils.keccak256(callData)]
         )
       );
-      console.log("Message hash created:", messageHash.substring(0, 20) + "...");
+      
+      console.log("Message hash created:", messageHash);
+      
+      // Create the Ethereum signed message
+      const ethSignedMessageHash = ethers.utils.keccak256(
+        ethers.utils.solidityPack(
+          ['string', 'bytes32'],
+          ['\x19Ethereum Signed Message:\n32', messageHash]
+        )
+      );
+      
+      console.log("Ethereum signed message hash:", ethSignedMessageHash);
       
       // Sign the message with fresh signer
       const signature = await freshSigner.signMessage(ethers.utils.arrayify(messageHash));
-      console.log("Signature obtained:", signature.substring(0, 20) + "...");
+      console.log("Signature obtained:", signature);
+      
+      // Log signature components for debugging
+      const sigParts = ethers.utils.splitSignature(signature);
+      console.log("Signature components:", {
+        r: sigParts.r,
+        s: sigParts.s,
+        v: sigParts.v
+      });
       
       return signature;
     } catch (error) {
@@ -546,7 +566,7 @@ const connectWallet = async () => {
     }
   };
   
-  // Sign a reward claim with wallet
+  // Sign a reward claim with wallet - UPDATED METHOD
   const signWalletRewardClaim = async (pollAddress) => {
     try {
       // Create a message hash for the smart wallet to execute
@@ -557,17 +577,20 @@ const connectWallet = async () => {
       // Encode the claimReward function call
       const callData = pollInterface.encodeFunctionData('claimReward', []);
       
-      // Create message hash
+      // Create message hash using the same method as in signWalletVote
       const messageHash = ethers.utils.keccak256(
-        ethers.utils.defaultAbiCoder.encode(
+        ethers.utils.solidityPack(
           ['address', 'uint256', 'bytes32'],
-          [pollAddress, 0, ethers.utils.keccak256(callData)]
+          [pollAddress, ethers.constants.Zero, ethers.utils.keccak256(callData)]
         )
       );
       
-      // Sign the message
-      const signer = provider.getSigner();
-      const signature = await signer.signMessage(ethers.utils.arrayify(messageHash));
+      // Sign the message - make sure we're using a fresh signer
+      const freshProvider = new ethers.providers.Web3Provider(window.ethereum);
+      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const freshSigner = freshProvider.getSigner();
+      
+      const signature = await freshSigner.signMessage(ethers.utils.arrayify(messageHash));
       
       return signature;
     } catch (error) {
