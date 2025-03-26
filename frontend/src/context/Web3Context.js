@@ -5,6 +5,7 @@ import React, { createContext, useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import createMagicInstance from '../config/magic';
 import api from '../utils/api';
+import { formatUSDT } from '../utils/web3Helper';
 
 // Create context
 export const Web3Context = createContext();
@@ -22,6 +23,7 @@ export const Web3Provider = ({ children }) => {
   const [magic, setMagic] = useState(null);
   const [authType, setAuthType] = useState(null); // 'magic' or 'wallet'
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [usdtAddress, setUsdtAddress] = useState(process.env.REACT_APP_USDT_ADDRESS || "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06"); // USDT contract address on Polygon Amoy testnet
   
   // Open/close auth modal
   const openAuthModal = () => setShowAuthModal(true);
@@ -169,71 +171,71 @@ export const Web3Provider = ({ children }) => {
     window.location.reload();
   };
   
-// Connect wallet
-const connectWallet = async () => {
-  try {
-    if (!window.ethereum) {
-      setError('MetaMask is not installed. Please install it to use this app.');
-      return false;
-    }
-    
-    setLoading(true);
-    
-    // Request account access
-    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-    console.log("Connected accounts:", accounts);
-    
-    if (accounts.length > 0) {
-      // Create provider if not exists
-      if (!provider) {
-        const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
-        setProvider(web3Provider);
-        
-        // Get network
-        const network = await web3Provider.getNetwork();
-        setChainId(network.chainId);
-        console.log("Connected to network:", network);
-        
-        // Explicitly set signer
-        const newSigner = web3Provider.getSigner();
-        setSigner(newSigner);
-        
-        // Verify signer works
-        try {
-          const signerAddress = await newSigner.getAddress();
-          console.log("Signer address verified:", signerAddress);
-        } catch (signerError) {
-          console.error("Signer error:", signerError);
-          setError('Failed to access wallet. Please reconnect.');
-          setLoading(false);
-          return false;
-        }
-      } else {
-        // If provider exists, refresh signer
-        const refreshedSigner = provider.getSigner();
-        setSigner(refreshedSigner);
+  // Connect wallet
+  const connectWallet = async () => {
+    try {
+      if (!window.ethereum) {
+        setError('MetaMask is not installed. Please install it to use this app.');
+        return false;
       }
       
-      setAccount(accounts[0]);
-      setIsConnected(true);
-      setAuthType('wallet');
+      setLoading(true);
       
-      // Get smart wallet address
-      await getSmartWalletAddress(accounts[0]);
+      // Request account access
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      console.log("Connected accounts:", accounts);
+      
+      if (accounts.length > 0) {
+        // Create provider if not exists
+        if (!provider) {
+          const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+          setProvider(web3Provider);
+          
+          // Get network
+          const network = await web3Provider.getNetwork();
+          setChainId(network.chainId);
+          console.log("Connected to network:", network);
+          
+          // Explicitly set signer
+          const newSigner = web3Provider.getSigner();
+          setSigner(newSigner);
+          
+          // Verify signer works
+          try {
+            const signerAddress = await newSigner.getAddress();
+            console.log("Signer address verified:", signerAddress);
+          } catch (signerError) {
+            console.error("Signer error:", signerError);
+            setError('Failed to access wallet. Please reconnect.');
+            setLoading(false);
+            return false;
+          }
+        } else {
+          // If provider exists, refresh signer
+          const refreshedSigner = provider.getSigner();
+          setSigner(refreshedSigner);
+        }
+        
+        setAccount(accounts[0]);
+        setIsConnected(true);
+        setAuthType('wallet');
+        
+        // Get smart wallet address
+        await getSmartWalletAddress(accounts[0]);
+        
+        setLoading(false);
+        return true;
+      }
       
       setLoading(false);
-      return true;
+      return false;
+    } catch (error) {
+      console.error("Error connecting wallet:", error);
+      setError('Failed to connect wallet');
+      setLoading(false);
+      return false;
     }
-    
-    setLoading(false);
-    return false;
-  } catch (error) {
-    console.error("Error connecting wallet:", error);
-    setError('Failed to connect wallet');
-    setLoading(false);
-    return false;
-  }
-};
+  };
   
   // Login with Magic
   const loginWithMagic = async (method, params) => {
@@ -287,6 +289,57 @@ const connectWallet = async () => {
     } catch (error) {
       console.error("Error logging out:", error);
       return false;
+    }
+  };
+  
+  // Get USDT balance for a user
+  const getUSDTBalance = async (address) => {
+    try {
+      if (!address) {
+        return "0.00";
+      }
+      
+      // Check if the address is a user address or smart wallet address
+      let walletAddress = address;
+      
+      // If we have a smart wallet address and it's different, use that
+      if (smartWalletAddress && address !== smartWalletAddress) {
+        walletAddress = smartWalletAddress;
+      }
+      
+      // First try to get balance from our backend
+      try {
+        const response = await api.get(`/wallets/${walletAddress}`);
+        
+        if (response.data.success && response.data.data.balance) {
+          return parseFloat(response.data.data.balance).toFixed(2);
+        }
+      } catch (error) {
+        console.error("Error fetching balance from API:", error);
+      }
+      
+      // If we can't get it from the backend and have a provider, try directly from blockchain
+      if (provider && usdtAddress) {
+        // USDT token interface - minimal ABI for balanceOf
+        const tokenAbi = [
+          "function balanceOf(address owner) view returns (uint256)",
+          "function decimals() view returns (uint8)"
+        ];
+        
+        const tokenContract = new ethers.Contract(usdtAddress, tokenAbi, provider);
+        
+        // Get token decimals and balance
+        const decimals = await tokenContract.decimals();
+        const balance = await tokenContract.balanceOf(walletAddress);
+        
+        // Format balance with correct decimals
+        return parseFloat(ethers.utils.formatUnits(balance, decimals)).toFixed(2);
+      }
+      
+      return "0.00";
+    } catch (error) {
+      console.error("Error getting USDT balance:", error);
+      return "0.00";
     }
   };
   
@@ -679,7 +732,8 @@ const connectWallet = async () => {
         getPoll,
         createPoll,
         claimReward,
-        getClaimableRewards
+        getClaimableRewards,
+        getUSDTBalance, // Add this new function
       }}
     >
       {children}
