@@ -1,8 +1,8 @@
-// Final Navbar.js implementation
+// src/components/Navbar.js
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import './Navbar.css';
-import truthPollLogo from '../assets/TruthPoll-logo.png';
+import fullLogo from '../assets/test123.png'; // Update this path to your actual image file
 
 const Navbar = ({ isLoggedIn, userAccount, logout }) => {
   const navigate = useNavigate();
@@ -23,11 +23,11 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
       <div className="navbar-left">
         <div className="logo" onClick={handleLogoClick}>
           <img 
-            src={truthPollLogo} 
+            src={fullLogo} 
             alt="TruthPoll Logo" 
-            className="logo-icon" 
+            className="full-logo" 
           />
-          <span>TruthPoll</span>
+          {/* Removed the text span since it's now part of the logo */}
         </div>
         <div className="search-bar">
           <div className="search-icon">
@@ -40,9 +40,8 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
         </div>
       </div>
 
-      {/* Right Section - Contains Nav Items, Auth, and Menu */}
+      {/* Rest of the navbar code remains the same */}
       <div className="navbar-right">
-        {/* Navigation Items Group */}
         <div className="nav-items">
           <Link to="/polls" className={`nav-item ${isActive('/polls') ? 'active' : ''}`}>
             <div className="nav-icon">
@@ -53,7 +52,6 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
             <span>Polls</span>
           </Link>
           
-          {/* Create icon */}
           <Link to="/create-poll" className={`nav-item ${isActive('/create-poll') ? 'active' : ''}`}>
             <div className="nav-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -84,10 +82,8 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
           </Link>
         </div>
         
-        {/* Divider */}
         <div className="nav-divider"></div>
         
-        {/* Auth Section */}
         <div className="auth-section">
           {isLoggedIn ? (
             <>
@@ -110,7 +106,6 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
           )}
         </div>
         
-        {/* Hamburger Menu Button */}
         <div className="menu-button">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="3" y1="12" x2="21" y2="12"></line>
