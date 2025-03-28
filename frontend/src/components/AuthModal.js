@@ -29,7 +29,6 @@ const AuthModal = ({ isOpen, onClose }) => {
     
     // Add logging here
     console.log("Attempting login with email:", email);
-    console.log("Magic API Key:", process.env.REACT_APP_MAGIC_PUBLISHABLE_KEY);
     
     setEmailError('');
     const success = await loginWithMagic('email', { email });
@@ -154,11 +153,9 @@ const AuthModal = ({ isOpen, onClose }) => {
               </div>
               
               <div className="border border-gray-300 rounded-md p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 opacity-50">
-                <div className="h-8 w-8 mb-2 flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                  </svg>
-                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                </svg>
                 <span className="text-sm">More</span>
               </div>
             </div>

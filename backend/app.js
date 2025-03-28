@@ -24,7 +24,6 @@ app.use(magicAuth); // Add Magic authentication middleware
 
 // Mount routers
 app.use('/api/polls', require('./routes/pollRoutes'));
-app.use('/api/wallets', require('./routes/walletRoutes'));
 app.use('/api/contracts', require('./routes/contractRoutes'));
 app.use('/api/auth', require('./routes/authRoutes')); 
 app.use('/api/smart-wallets', require('./routes/smartWalletRoutes'));

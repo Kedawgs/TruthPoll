@@ -344,9 +344,9 @@ exports.votePoll = async (req, res) => {
     } else {
       console.log("Handling non-Magic user vote");
       
-      // For non-Magic users - use smart wallet
+      // Non-Magic users - use smart wallet
       try {
-        // Get or deploy the smart wallet (now with additional verification)
+        // Get or deploy the smart wallet
         console.log("Checking smart wallet for voter:", voterAddress);
         
         // First just get the expected address

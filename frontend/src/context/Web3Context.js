@@ -1,6 +1,5 @@
 // src/context/Web3Context.js
 
-// Import necessary libraries
 import React, { createContext, useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import createMagicInstance from '../config/magic';
@@ -23,7 +22,7 @@ export const Web3Provider = ({ children }) => {
   const [magic, setMagic] = useState(null);
   const [authType, setAuthType] = useState(null); // 'magic' or 'wallet'
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [usdtAddress, setUsdtAddress] = useState(process.env.REACT_APP_USDT_ADDRESS || "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06"); // USDT contract address on Polygon Amoy testnet
+  const [usdtAddress, setUsdtAddress] = useState(process.env.REACT_APP_USDT_ADDRESS); // USDT contract address on Polygon Amoy testnet
   
   // User profile state
   const [userProfile, setUserProfile] = useState(null);
@@ -206,17 +205,72 @@ export const Web3Provider = ({ children }) => {
     }
   };
   
-  // Get smart wallet address for non-Magic users
   const getSmartWalletAddress = async (userAddress) => {
     try {
+      // FIX: Remove the duplicate "api/" prefix
       const response = await api.get(`/smart-wallets/${userAddress}`);
       
       if (response.data.success) {
         setSmartWalletAddress(response.data.data.address);
         console.log("Smart wallet address:", response.data.data.address);
+        return response.data.data.address;
       }
+      return null;
     } catch (error) {
       console.error("Error getting smart wallet address:", error);
+      return null;
+    }
+  };
+  
+  // Deploy smart wallet if needed
+  const deploySmartWalletIfNeeded = async () => {
+    try {
+      if (!account) {
+        throw new Error('No account available');
+      }
+      
+      // Check if wallet already exists
+      let walletAddress = smartWalletAddress;
+      
+      if (!walletAddress) {
+        walletAddress = await getSmartWalletAddress(account);
+      }
+      
+      // If we have an address but it may not be deployed
+      if (walletAddress) {
+        // Check if it's deployed
+        const response = await api.get(`/smart-wallets/${account}`);
+        
+        if (response.data.success && !response.data.data.isDeployed) {
+          // Deploy it
+          const deployResponse = await api.post('/smart-wallets', {
+            userAddress: account
+          });
+          
+          if (deployResponse.data.success) {
+            setSmartWalletAddress(deployResponse.data.data.address);
+            return deployResponse.data.data.address;
+          }
+        } else if (response.data.success) {
+          // Already deployed
+          return walletAddress;
+        }
+      } else {
+        // We don't have an address, request creation
+        const deployResponse = await api.post('/smart-wallets', {
+          userAddress: account
+        });
+        
+        if (deployResponse.data.success) {
+          setSmartWalletAddress(deployResponse.data.data.address);
+          return deployResponse.data.data.address;
+        }
+      }
+      
+      throw new Error('Failed to deploy smart wallet');
+    } catch (error) {
+      console.error("Error deploying smart wallet:", error);
+      throw error;
     }
   };
   
@@ -417,7 +471,7 @@ export const Web3Provider = ({ children }) => {
       
       // First try to get balance from our backend
       try {
-        const response = await api.get(`/wallets/${walletAddress}`);
+        const response = await api.get(`/smart-wallets/${address}`);
         
         if (response.data.success && response.data.data.balance) {
           return parseFloat(response.data.data.balance).toFixed(2);
@@ -427,21 +481,29 @@ export const Web3Provider = ({ children }) => {
       }
       
       // If we can't get it from the backend and have a provider, try directly from blockchain
-      if (provider && usdtAddress) {
-        // USDT token interface - minimal ABI for balanceOf
-        const tokenAbi = [
-          "function balanceOf(address owner) view returns (uint256)",
-          "function decimals() view returns (uint8)"
-        ];
-        
-        const tokenContract = new ethers.Contract(usdtAddress, tokenAbi, provider);
-        
-        // Get token decimals and balance
-        const decimals = await tokenContract.decimals();
-        const balance = await tokenContract.balanceOf(walletAddress);
-        
-        // Format balance with correct decimals
-        return parseFloat(ethers.utils.formatUnits(balance, decimals)).toFixed(2);
+      if (provider) {
+        try {
+          // USDT token on Polygon Amoy testnet - you may need to update this
+          // Use a hardcoded address for testing purposes
+          const testnetUsdtAddress = "0xc2132d05d31c914a87c6611c10748aeb04b58e8f"; // Sample Amoy testnet USDT
+          
+          // USDT token interface - minimal ABI for balanceOf
+          const tokenAbi = [
+            "function balanceOf(address owner) view returns (uint256)"
+          ];
+          
+          const tokenContract = new ethers.Contract(testnetUsdtAddress, tokenAbi, provider);
+          
+          // Get balance with a hardcoded value for decimals (6 is standard for USDT)
+          const balance = await tokenContract.balanceOf(walletAddress);
+          
+          // Format balance with hardcoded 6 decimals (standard for USDT)
+          return parseFloat(ethers.utils.formatUnits(balance, 6)).toFixed(2);
+        } catch (error) {
+          console.error("Error getting USDT balance from blockchain:", error);
+          // Fall back to returning zero
+          return "0.00";
+        }
       }
       
       return "0.00";
@@ -536,7 +598,7 @@ export const Web3Provider = ({ children }) => {
       
       console.log("Domain data:", domain);
   
-      // Define types - IMPORTANT: Must match the contract exactly
+      // Define types - IMPORTANT: must match the contract exactly
       const types = {
         Vote: [
           { name: 'voter', type: 'address' },
@@ -842,6 +904,7 @@ export const Web3Provider = ({ children }) => {
         claimReward,
         getClaimableRewards,
         getUSDTBalance,
+        deploySmartWalletIfNeeded,
         // User profile state and functions
         userProfile,
         setUserProfile,

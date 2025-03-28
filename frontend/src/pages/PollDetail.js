@@ -87,7 +87,7 @@ const PollDetail = () => {
       setVoting(true);
       setError(null);
       
-      // Both Magic and non-Magic users use the same flow
+      // Uses the unified votePoll method (works with both Magic and smart wallets)
       await votePoll(id, selectedOption);
       
       // Refresh poll data
@@ -119,6 +119,7 @@ const PollDetail = () => {
       setClaiming(true);
       setError(null);
       
+      // Uses the unified claimReward method (works with both Magic and smart wallets)
       await claimReward(poll.contractAddress);
       
       setClaiming(false);
@@ -241,7 +242,7 @@ const PollDetail = () => {
             <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded flex items-center">
               <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z"/>
-                <path d="M10 5a1 1 0 011 1v3.586l2.707 2.707a1 1 0 01-1.414 1.414L9 10.414V6a1 1 0 011-1z"/>
+                <path d="M10 5a1 1 0 011 1v3.586l2.707 2.707a1 1 0 01-1.414 1.414L10 11.414l-2.293 2.293a1 1 0 01-1.414-1.414L9 9.586V6a1 1 0 011-1z"/>
               </svg>
               Reward: {formatUSDT(poll.onChain?.rewardPerVoter)} USDT
             </span>

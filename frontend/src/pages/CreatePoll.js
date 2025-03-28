@@ -1,3 +1,4 @@
+// src/pages/CreatePoll.js
 import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Web3Context } from '../context/Web3Context';
@@ -9,7 +10,9 @@ const CreatePoll = () => {
     isConnected, 
     error: web3Error, 
     authType,
-    account 
+    account,
+    openAuthModal,
+    deploySmartWalletIfNeeded
   } = useContext(Web3Context);
   
   const [title, setTitle] = useState('');
@@ -52,11 +55,10 @@ const CreatePoll = () => {
   
   // Remove option field
   const removeOption = (index) => {
-    if (options.length > 2) {
-      const newOptions = [...options];
-      newOptions.splice(index, 1);
-      setOptions(newOptions);
-    }
+    if (options.length <= 2) return;
+    const newOptions = [...options];
+    newOptions.splice(index, 1);
+    setOptions(newOptions);
   };
   
   // Handle option change
@@ -97,6 +99,16 @@ const CreatePoll = () => {
       setLoading(true);
       setError('');
       
+      // For wallet users (non-Magic), make sure smart wallet is deployed
+      if (authType === 'wallet') {
+        try {
+          await deploySmartWalletIfNeeded();
+        } catch (walletError) {
+          console.error("Error deploying smart wallet:", walletError);
+          // Continue anyway, the backend will handle deployment if needed
+        }
+      }
+      
       // Create poll
       const response = await createPoll({
         title,
@@ -126,7 +138,7 @@ const CreatePoll = () => {
             You need to connect a wallet or sign in with Magic to create a poll.
           </p>
           <button 
-            onClick={() => navigate('/signup')} 
+            onClick={() => openAuthModal()} 
             className="btn btn-primary"
           >
             Sign Up / Sign In

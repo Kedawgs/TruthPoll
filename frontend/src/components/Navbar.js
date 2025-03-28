@@ -78,6 +78,7 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
     const fetchBalance = async () => {
       if (isLoggedIn && userAccount) {
         try {
+          // Use getUSDTBalance from context which should now use smart wallets
           const balance = await getUSDTBalance(userAccount);
           setUsdtBalance(balance || "0.00");
         } catch (error) {
