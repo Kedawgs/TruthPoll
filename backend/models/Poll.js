@@ -65,4 +65,4 @@ PollSchema.pre('save', function(next) {
   next();
 });
 
-module.exports = mongoose.model('Poll', PollSchema);
+module.exports = mongoose.model('Poll', PollSchema, 'polls'); // 'polls' is the collection name
