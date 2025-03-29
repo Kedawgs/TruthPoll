@@ -5,6 +5,7 @@ import { ethers } from 'ethers';
 import createMagicInstance from '../config/magic';
 import api from '../utils/api';
 import { formatUSDT } from '../utils/web3Helper';
+import logger from '../utils/logger'; // Optional: Add a logger utility
 
 // Create context
 export const Web3Context = createContext();
@@ -207,6 +208,11 @@ export const Web3Provider = ({ children }) => {
   
   const getSmartWalletAddress = async (userAddress) => {
     try {
+      // Only proceed if this is a wallet user (not Magic)
+      if (authType === 'magic') {
+        return null;
+      }
+      
       // FIX: Remove the duplicate "api/" prefix
       const response = await api.get(`/smart-wallets/${userAddress}`);
       
@@ -222,11 +228,12 @@ export const Web3Provider = ({ children }) => {
     }
   };
   
-  // Deploy smart wallet if needed
+  // Deploy smart wallet if needed - ONLY for non-Magic users
   const deploySmartWalletIfNeeded = async () => {
     try {
-      if (!account) {
-        throw new Error('No account available');
+      // Skip for Magic users
+      if (authType === 'magic' || !account) {
+        return null;
       }
       
       // Check if wallet already exists
@@ -289,7 +296,11 @@ export const Web3Provider = ({ children }) => {
       setAccount(accounts[0]);
       if (provider) {
         setSigner(provider.getSigner());
-        await getSmartWalletAddress(accounts[0]);
+        
+        // Only get smart wallet for wallet users
+        if (authType === 'wallet') {
+          await getSmartWalletAddress(accounts[0]);
+        }
         
         // Check if new account has a username
         try {
@@ -364,7 +375,7 @@ export const Web3Provider = ({ children }) => {
         setIsConnected(true);
         setAuthType('wallet');
         
-        // Get smart wallet address
+        // Get smart wallet address for non-Magic users
         await getSmartWalletAddress(accounts[0]);
         
         // Check if user has a username
@@ -454,55 +465,72 @@ export const Web3Provider = ({ children }) => {
     }
   };
   
+  // Improved USDT balance check that works with Magic users
   const getUSDTBalance = async (address) => {
     try {
-      // Only proceed if we have a smart wallet address
-      if (!smartWalletAddress) {
-        console.log("Smart wallet not available yet");
-        return "0.00";
+      // For Magic users, use their Ethereum address directly
+      // For wallet users, use the smart wallet address
+      const walletToCheck = authType === 'magic' 
+        ? account  // Magic user's address
+        : smartWalletAddress;  // Smart wallet for non-Magic users
+      
+      // Log which wallet we're checking
+      if (authType === 'magic') {
+        console.log(`Checking balance for Magic user: ${walletToCheck}`);
+      } else {
+        if (!walletToCheck) {
+          console.log("Smart wallet not available yet");
+          return "0.00";  // Early return for wallet users without smart wallet
+        }
+        console.log(`Checking balance for smart wallet: ${walletToCheck}`);
       }
       
-      // Always use the smart wallet address regardless of what address was passed
-      const walletToCheck = smartWalletAddress;
-      console.log(`Checking balance for smart wallet: ${walletToCheck}`);
-      
-      // If we have a provider, try to get the balance from blockchain
-      if (provider) {
+      // If we have a provider and wallet address, try to get the balance
+      if (provider && walletToCheck) {
         try {
           const testnetUsdtAddress = process.env.REACT_APP_USDT_ADDRESS;
           console.log(`Using token address: ${testnetUsdtAddress}`);
           
           // Use a simplified token ABI with just balanceOf
           const tokenAbi = [
-            "function balanceOf(address owner) view returns (uint256)"
+            "function balanceOf(address owner) view returns (uint256)",
+            "function decimals() view returns (uint8)"
           ];
           
           const tokenContract = new ethers.Contract(
             testnetUsdtAddress, 
             tokenAbi, 
-            provider
+            provider  // Use the provider from state, NOT magic.rpcProvider
           );
           
-          // Use hardcoded 6 decimals (standard for USDT)
-          const decimals = 6;
-          const balance = await tokenContract.balanceOf(walletToCheck);
+          // Try to get decimals, default to 6 for USDT
+          let decimals = 6;
+          try {
+            const tokenDecimals = await tokenContract.decimals();
+            decimals = tokenDecimals;
+            console.log(`Token decimals: ${decimals}`);
+          } catch (decimalError) {
+            console.log("Could not get token decimals, using default (6)");
+          }
           
+          // Get balance
+          const balance = await tokenContract.balanceOf(walletToCheck);
           console.log(`Raw balance: ${balance.toString()}`);
           
-          // Format balance with hardcoded decimals
+          // Format balance with decimals
           const formattedBalance = parseFloat(ethers.utils.formatUnits(balance, decimals)).toFixed(2);
           console.log(`Formatted balance: ${formattedBalance}`);
           
           return formattedBalance;
         } catch (error) {
           console.error("Error getting token balance from blockchain:", error);
-          // Temporary fallback for development
+          // For development, return mock balance
           console.log("Using mock balance during development");
           return "100.00";  // Mock balance for development
         }
       }
       
-      // Fallback if no provider
+      // Fallback if no provider or wallet
       return "0.00";
     } catch (error) {
       console.error("Error in getUSDTBalance:", error);
@@ -715,7 +743,7 @@ export const Web3Provider = ({ children }) => {
     }
   };
   
-  // Claim rewards
+  // Claim rewards - UPDATED to handle Magic users differently
   const claimReward = async (pollAddress) => {
     try {
       if (!isConnected) {
@@ -726,10 +754,10 @@ export const Web3Provider = ({ children }) => {
       let signature;
       
       if (authType === 'magic') {
-        // For Magic users
+        // For Magic users - sign directly
         signature = await signMagicRewardClaim(pollAddress);
       } else {
-        // For wallet users
+        // For wallet users - sign through smart wallet
         signature = await signWalletRewardClaim(pollAddress);
       }
       
