@@ -120,7 +120,7 @@ const CreatePoll = () => {
       });
       
       // Redirect to poll page on success
-      navigate(`/polls/${response.data._id}`);
+      navigate(`/polls/${response.data.poll._id}`);
     } catch (err) {
       console.error('Error creating poll:', err);
       setError(err.response?.data?.error || 'Failed to create poll');
