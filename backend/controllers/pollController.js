@@ -199,6 +199,13 @@ exports.searchPolls = async (req, res, next) => {
   try {
     const { query } = req.query;
     
+    if (!query || query.trim().length < 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide a search query'
+      });
+    }
+    
     const polls = await pollService.searchPolls(query);
     
     return successResponse(res, polls);

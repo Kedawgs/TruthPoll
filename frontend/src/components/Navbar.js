@@ -5,6 +5,7 @@ import { Web3Context } from '../context/Web3Context';
 import './Navbar.css';
 import Sidebar from './Sidebar';
 import fullLogo from '../assets/test123.png'; // Update this path to your actual image file
+import api from '../utils/api';
 
 const Navbar = ({ isLoggedIn, userAccount, logout }) => {
   const navigate = useNavigate();
@@ -14,7 +15,16 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const hoverTimerRef = useRef(null);
   const hoverDelayRef = useRef(null);
+  const searchInputRef = useRef(null);
   const { getUSDTBalance, openAuthModal } = useContext(Web3Context);
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [filteredResults, setFilteredResults] = useState([]);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'active', or 'ended'
   
   // Handle mouse enter on hamburger menu
   const handleMenuMouseEnter = () => {
@@ -96,6 +106,78 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
     return () => clearInterval(intervalId);
   }, [isLoggedIn, userAccount, getUSDTBalance]);
   
+  // Filter results based on active filter
+  useEffect(() => {
+    if (searchResults.length === 0) {
+      setFilteredResults([]);
+      return;
+    }
+
+    if (activeFilter === 'all') {
+      setFilteredResults(searchResults);
+    } else if (activeFilter === 'active') {
+      setFilteredResults(searchResults.filter(poll => 
+        poll.onChain?.isActive === true || poll.isActive === true
+      ));
+    } else if (activeFilter === 'ended') {
+      setFilteredResults(searchResults.filter(poll => 
+        poll.onChain?.isActive === false || poll.isActive === false
+      ));
+    }
+  }, [searchResults, activeFilter]);
+  
+  // Handle search query changes
+  useEffect(() => {
+    const searchPolls = async () => {
+      if (searchQuery.trim().length < 1) {
+        setSearchResults([]);
+        setShowSearchDropdown(false);
+        return;
+      }
+
+      setSearchLoading(true);
+      
+      try {
+        // Debounce search
+        const timer = setTimeout(async () => {
+          const response = await api.get(`/polls/search`, {
+            params: { query: searchQuery }
+          });
+          
+          if (response.data.success) {
+            setSearchResults(response.data.data.slice(0, 10)); // Limit to top 10 results
+            setShowSearchDropdown(true);
+          } else {
+            setSearchResults([]);
+          }
+          setSearchLoading(false);
+        }, 300);
+
+        return () => clearTimeout(timer);
+      } catch (error) {
+        console.error("Error searching polls:", error);
+        setSearchResults([]);
+        setSearchLoading(false);
+      }
+    };
+
+    searchPolls();
+  }, [searchQuery]);
+
+  // Click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchInputRef.current && !searchInputRef.current.contains(event.target)) {
+        setShowSearchDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+  
   const handleLogoClick = () => {
     navigate('/');
   };
@@ -136,6 +218,52 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   };
 
+  // Calculate percentage for leading option in a poll
+  const calculateLeadingPercentage = (poll) => {
+    if (!poll?.onChain?.results || !poll.onChain?.totalVotes) return 0;
+    
+    // Find the option with the most votes
+    const maxVotes = Math.max(...poll.onChain.results);
+    if (maxVotes === 0) return 0;
+    
+    return Math.round((maxVotes / poll.onChain.totalVotes) * 100);
+  };
+
+  // Get the leading option text
+  const getLeadingOption = (poll) => {
+    if (!poll?.onChain?.results || !poll.options) return '';
+    
+    // Find the index of the option with the most votes
+    const maxIndex = poll.onChain?.results.indexOf(Math.max(...poll.onChain.results));
+    return poll.options[maxIndex];
+  };
+
+  // Handle search input changes
+  const handleSearchChange = (e) => {
+    setSearchQuery(e.target.value);
+  };
+
+  // Handle search poll selection
+  const handlePollSelect = (pollId) => {
+    navigate(`/polls/${pollId}`);
+    setShowSearchDropdown(false);
+    setSearchQuery('');
+  };
+
+  // Handle search form submission
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/polls?search=${encodeURIComponent(searchQuery.trim())}`);
+      setShowSearchDropdown(false);
+    }
+  };
+
+  // Handle filter change
+  const handleFilterChange = (filter) => {
+    setActiveFilter(filter);
+  };
+
   return (
     <>
       <nav className="navbar">
@@ -148,14 +276,105 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
               className="full-logo" 
             />
           </div>
-          <div className="search-bar">
-            <div className="search-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-            </div>
-            <input type="text" placeholder="Search" />
+          <div className="search-bar" ref={searchInputRef}>
+            <form onSubmit={handleSearchSubmit}>
+              <div className="search-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </div>
+              <input 
+                type="text" 
+                placeholder="Search polls" 
+                value={searchQuery}
+                onChange={handleSearchChange}
+              />
+            </form>
+            
+            {/* Search Dropdown */}
+            {showSearchDropdown && searchResults.length > 0 && (
+              <div className="search-dropdown">
+                {/* Filter Tabs */}
+                <div className="search-filter-tabs">
+                  <button 
+                    className={`filter-tab ${activeFilter === 'all' ? 'active' : ''}`}
+                    onClick={() => handleFilterChange('all')}
+                  >
+                    All
+                  </button>
+                  <button 
+                    className={`filter-tab ${activeFilter === 'active' ? 'active' : ''}`}
+                    onClick={() => handleFilterChange('active')}
+                  >
+                    Active
+                  </button>
+                  <button 
+                    className={`filter-tab ${activeFilter === 'ended' ? 'active' : ''}`}
+                    onClick={() => handleFilterChange('ended')}
+                  >
+                    Ended
+                  </button>
+                </div>
+                
+                {/* Filter Results */}
+                {filteredResults.length > 0 ? (
+                  filteredResults.map((poll) => (
+                    <div 
+                      key={poll._id} 
+                      className="search-result-item"
+                      onClick={() => handlePollSelect(poll._id)}
+                    >
+                      <div className="search-result-content">
+                        <div className="search-result-title">{poll.title}</div>
+                        <div className="search-result-category">{poll.category}</div>
+                      </div>
+                      <div className="search-result-percentage">
+                        <span className="percentage-value">{calculateLeadingPercentage(poll)}%</span>
+                        <span className="percentage-label">{getLeadingOption(poll)}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="search-no-results">
+                    No {activeFilter !== 'all' ? activeFilter : ''} polls found matching "{searchQuery}"
+                  </div>
+                )}
+                
+                {/* View All Results Link */}
+                {filteredResults.length > 0 && (
+                  <div 
+                    className="search-view-all"
+                    onClick={() => {
+                      navigate(`/polls?search=${encodeURIComponent(searchQuery.trim())}`);
+                      setShowSearchDropdown(false);
+                      setSearchQuery('');
+                    }}
+                  >
+                    View all results
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* No Results State */}
+            {showSearchDropdown && searchQuery.trim().length >= 1 && searchResults.length === 0 && !searchLoading && (
+              <div className="search-dropdown">
+                <div className="search-no-results">
+                  No polls found matching "{searchQuery}"
+                </div>
+              </div>
+            )}
+            
+            {/* Loading State */}
+            {searchLoading && searchQuery.trim().length >= 1 && (
+              <div className="search-dropdown">
+                <div className="search-loading">
+                  <div className="search-loading-spinner"></div>
+                  <span>Searching...</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

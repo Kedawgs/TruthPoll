@@ -117,9 +117,9 @@ class PollService {
       
       if (category) query.category = category;
       if (creator) query.creator = creator;
-    if (active !== null) {
-      query.isActive = active === 'true';
-    }
+      if (active !== null) {
+        query.isActive = active === 'true';
+      }
       
       // Add search functionality
       if (search) {
@@ -585,7 +585,7 @@ class PollService {
   /**
    * Search for polls
    * @param {String} query - Search query
-   * @returns {Array} Matching polls
+   * @returns {Array} Matching polls with on-chain data
    */
   async searchPolls(query) {
     try {
@@ -600,11 +600,34 @@ class PollService {
           { description: { $regex: query, $options: 'i' } },
           { tags: { $in: [new RegExp(query, 'i')] } }
         ]
-      });
+      }).limit(10); // Limit to 10 results for performance
       
       logger.info(`Search for "${query}" returned ${polls.length} results`);
       
-      return polls;
+      // Enhance polls with on-chain data
+      const enhancedPolls = await Promise.all(
+        polls.map(async (poll) => {
+          try {
+            if (poll.contractAddress) {
+              // Get on-chain data
+              const onChainData = await this.contractService.getPollDetails(poll.contractAddress);
+              
+              // Return poll with on-chain data
+              return {
+                ...poll.toObject(),
+                onChain: onChainData
+              };
+            }
+            return poll.toObject();
+          } catch (error) {
+            logger.error(`Error fetching on-chain data for poll ${poll._id}:`, error);
+            // Return poll without on-chain data if fetch fails
+            return poll.toObject();
+          }
+        })
+      );
+      
+      return enhancedPolls;
     } catch (error) {
       logger.error(`Error searching polls: ${error.message}`);
       
