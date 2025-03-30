@@ -263,18 +263,75 @@ export const AuthProvider = ({ children }) => {
     }
   };
   
-  // Logout
+  // Updated logout function with proper MetaMask disconnection
   const logout = async () => {
     try {
+      // For Magic users, use their logout
       if (authType === 'magic' && magic) {
         await magic.user.logout();
       }
       
-      // Reset state
+      // 1. Tell MetaMask we're disconnecting (if possible)
+      if (window.ethereum) {
+        try {
+          // First try the proper disconnect (EIP-1193)
+          if (window.ethereum.request) {
+            // This is the key method that properly disconnects
+            await window.ethereum.request({
+              method: 'wallet_revokePermissions',
+              params: [{ eth_accounts: {} }]
+            });
+          }
+        } catch (disconnectError) {
+          logger.info("Could not revoke permissions:", disconnectError);
+          // Continue with fallback
+        }
+      }
+      
+      // 2. Remove all event listeners
+      if (window.ethereum) {
+        if (window.ethereum.removeAllListeners) {
+          window.ethereum.removeAllListeners();
+        } else {
+          // Fallback for providers without removeAllListeners
+          window.ethereum.removeListener?.('accountsChanged', handleAccountsChanged);
+          window.ethereum.removeListener?.('chainChanged', handleChainChanged);
+          window.ethereum.removeListener?.('disconnect', () => {});
+          window.ethereum.removeListener?.('connect', () => {});
+        }
+      }
+      
+      // 3. Clear localStorage and sessionStorage
+      const keysToRemove = [
+        'walletProvider',
+        'connectedWallet',
+        'userAccount',
+        'walletconnect',
+        'WALLETCONNECT_DEEPLINK_CHOICE',
+        'smartWalletAddress',
+        'web3-provider-name',
+      ];
+      
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      
+      // Clear relevant session storage items
+      const sessionKeysToRemove = Object.keys(sessionStorage);
+      sessionKeysToRemove.forEach(key => {
+        if (key.includes('wallet') || key.includes('web3') || key.includes('connect')) {
+          sessionStorage.removeItem(key);
+        }
+      });
+      
+      // 4. Reset state variables
       setAccount(null);
       setSigner(null);
       setIsConnected(false);
       setAuthType(null);
+      setProvider(null);
+      setChainId(null);
+      
+      // 5. Signal logout to other contexts
+      window.dispatchEvent(new CustomEvent('auth:logout'));
       
       return true;
     } catch (error) {

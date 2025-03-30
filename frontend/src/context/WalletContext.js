@@ -22,6 +22,25 @@ export const WalletProvider = ({ children }) => {
   // USDT token address
   const [usdtAddress] = useState(process.env.REACT_APP_USDT_ADDRESS);
   
+  // Listen for logout events
+  useEffect(() => {
+    const handleLogout = () => {
+      // Reset wallet state on logout
+      logger.info("WalletContext: Handling logout event");
+      setSmartWalletAddress(null);
+      setIsSmartWalletDeployed(false);
+      setUsdtBalance("0.00");
+      setWalletLoading(false);
+      setWalletError(null);
+    };
+    
+    window.addEventListener('auth:logout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('auth:logout', handleLogout);
+    };
+  }, []);
+  
   // Load smart wallet data when auth state changes
   useEffect(() => {
     if (isConnected && account) {
@@ -32,6 +51,10 @@ export const WalletProvider = ({ children }) => {
       
       // Get USDT balance for any connected user
       refreshUSDTBalance();
+    } else {
+      // Reset wallet state when disconnected
+      setSmartWalletAddress(null);
+      setIsSmartWalletDeployed(false);
     }
   }, [isConnected, account, authType]);
   
@@ -188,8 +211,11 @@ export const WalletProvider = ({ children }) => {
         } catch (error) {
           logger.error("Error getting token balance from blockchain:", error);
           // For development, return mock balance
-          logger.info("Using mock balance during development");
-          return "100.00";  // Mock balance for development
+          if (process.env.NODE_ENV === 'development') {
+            logger.info("Using mock balance during development");
+            return "100.00";  // Mock balance for development
+          }
+          return "0.00";
         }
       }
       
