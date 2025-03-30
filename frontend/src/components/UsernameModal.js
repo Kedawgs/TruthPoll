@@ -1,5 +1,5 @@
 // src/components/UsernameModal.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // Add useRef
 import { useAppContext } from '../hooks/useAppContext';
 
 const UsernameModal = () => {
@@ -7,6 +7,9 @@ const UsernameModal = () => {
   const [username, setUsername] = useState('');
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [autoUsername, setAutoUsername] = useState('');
+  
+  // Use a ref instead of state for tracking submission
+  const hasSubmittedRef = useRef(false);
   
   // Get data from context
   const {
@@ -31,7 +34,7 @@ const UsernameModal = () => {
     // Setup event listener for when user tries to navigate away
     const handleBeforeUnload = () => {
       // Don't show confirmation dialog but handle automatic username assignment
-      if (termsAgreed) {
+      if (termsAgreed && !hasSubmittedRef.current) {
         skipUsernameSetup();
       }
     };
@@ -39,8 +42,10 @@ const UsernameModal = () => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      // If the component is unmounting and user agreed to terms, auto-assign username
-      if (termsAgreed) {
+      
+      // If the component is unmounting and user agreed to terms
+      // AND we haven't already submitted a username manually
+      if (termsAgreed && !hasSubmittedRef.current) {
         skipUsernameSetup();
       }
     };
@@ -49,13 +54,12 @@ const UsernameModal = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!username.trim()) {
+    if (!username.trim() || !termsAgreed || profileLoading) {
       return;
     }
 
-    if (!termsAgreed) {
-      return;
-    }
+    // Set the submission flag FIRST - before any async operation
+    hasSubmittedRef.current = true;
     
     // Save username to backend
     await saveUsername(username.trim());
@@ -63,6 +67,9 @@ const UsernameModal = () => {
 
   const handleSkip = async () => {
     if (termsAgreed) {
+      // Set the submission flag FIRST - before any async operation
+      hasSubmittedRef.current = true;
+      
       await skipUsernameSetup();
     }
   };
@@ -116,7 +123,7 @@ const UsernameModal = () => {
             <div className="flex flex-col gap-2">
               <button
                 type="submit"
-                disabled={profileLoading || !username.trim() || !termsAgreed}
+                disabled={profileLoading || !username.trim() || !termsAgreed || hasSubmittedRef.current}
                 className="w-full bg-blue-600 text-white py-2.5 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition duration-200 font-medium"
               >
                 {profileLoading ? 'Saving...' : 'Continue'}
@@ -126,7 +133,8 @@ const UsernameModal = () => {
                 <button
                   type="button"
                   onClick={handleSkip}
-                  className="w-full text-gray-600 text-sm py-1 hover:text-gray-800"
+                  disabled={hasSubmittedRef.current}
+                  className="w-full text-gray-600 text-sm py-1 hover:text-gray-800 disabled:opacity-50"
                 >
                   Skip for now
                 </button>
