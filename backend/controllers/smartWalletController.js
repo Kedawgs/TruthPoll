@@ -1,19 +1,13 @@
 // backend/controllers/smartWalletController.js
 const ethers = require('ethers');
-const SmartWalletService = require('../services/smartWalletService');
-
-// Initialize provider
-const provider = new ethers.providers.JsonRpcProvider(process.env.POLYGON_AMOY_RPC_URL);
-
-// Initialize service
-const smartWalletService = new SmartWalletService(
-  provider,
-  process.env.PLATFORM_WALLET_PRIVATE_KEY
-);
+const logger = require('../utils/logger');
 
 exports.getWalletAddress = async (req, res) => {
   try {
     const userAddress = req.params.address;
+    
+    // Get the service from app.locals
+    const smartWalletService = req.app.locals.smartWalletService;
     
     // Validate address format
     if (!ethers.utils.isAddress(userAddress)) {
@@ -37,7 +31,7 @@ exports.getWalletAddress = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error getting wallet address:', error);
+    logger.error('Error getting wallet address:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Server Error'
@@ -48,6 +42,9 @@ exports.getWalletAddress = async (req, res) => {
 exports.deployWallet = async (req, res) => {
   try {
     const { userAddress } = req.body;
+    
+    // Get the service from app.locals
+    const smartWalletService = req.app.locals.smartWalletService;
     
     // Verify the user is authenticated
     const { isMagicUser } = req.user || {};
@@ -69,7 +66,7 @@ exports.deployWallet = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error deploying wallet:', error);
+    logger.error('Error deploying wallet:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Server Error'

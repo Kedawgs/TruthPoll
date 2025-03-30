@@ -1,11 +1,12 @@
 // backend/services/smartWalletService.js
 const ethers = require('ethers');
 const SmartWalletFactory = require('../artifacts/contracts/SmartWalletFactory.sol/SmartWalletFactory.json');
+const logger = require('../utils/logger');
 
 class SmartWalletService {
-  constructor(provider, platformPrivateKey) {
+  constructor(provider, platformWalletProvider) {
     this.provider = provider;
-    this.platformWallet = new ethers.Wallet(platformPrivateKey, provider);
+    this.platformWalletProvider = platformWalletProvider;
     this.factoryAddress = process.env.SMART_WALLET_FACTORY_ADDRESS;
     
     // Default gas settings for Polygon Amoy testnet
@@ -19,11 +20,11 @@ class SmartWalletService {
       this.factory = new ethers.Contract(
         this.factoryAddress,
         SmartWalletFactory.abi,
-        this.platformWallet
+        this.provider
       );
-      console.log(`SmartWalletFactory initialized at ${this.factoryAddress}`);
+      logger.info(`SmartWalletFactory initialized at ${this.factoryAddress}`);
     } else {
-      console.log('SmartWalletFactory address not set in environment variables');
+      logger.warn('SmartWalletFactory address not set in environment variables');
     }
   }
   
@@ -40,16 +41,33 @@ class SmartWalletService {
       );
       
       const walletAddress = await this.factory.getWalletAddress(userAddress, salt);
-      console.log(`Smart wallet address for ${userAddress}: ${walletAddress}`);
+      logger.info(`Smart wallet address for ${userAddress}: ${walletAddress}`);
       
       return walletAddress;
     } catch (error) {
-      console.error('Error getting wallet address:', error);
+      logger.error('Error getting wallet address:', error);
       throw error;
     }
   }
   
-  // Deploy wallet if needed - IMPROVED WITH CONFIRMATION
+  // Check if wallet is deployed
+  async isWalletDeployed(walletAddress) {
+    try {
+      logger.info(`Checking if wallet is deployed at ${walletAddress}...`);
+      const code = await this.provider.getCode(walletAddress);
+      const isDeployed = code !== '0x';
+      
+      logger.info(`Wallet deployment status: ${isDeployed ? 'Deployed' : 'Not deployed'}`);
+      logger.info(`Code length: ${(code.length - 2) / 2} bytes`);
+      
+      return isDeployed;
+    } catch (error) {
+      logger.error('Error checking if wallet is deployed:', error);
+      throw error;
+    }
+  }
+  
+  // Deploy wallet if needed - IMPROVED for security
   async deployWalletIfNeeded(userAddress) {
     try {
       if (!this.factory) {
@@ -66,39 +84,46 @@ class SmartWalletService {
       
       // Get the expected wallet address
       const walletAddress = await this.factory.getWalletAddress(userAddress, salt);
-      console.log(`Expected smart wallet address: ${walletAddress}`);
+      logger.info(`Expected smart wallet address: ${walletAddress}`);
       
       // Check if already deployed
       const code = await this.provider.getCode(walletAddress);
       const isDeployed = code !== '0x';
       
-      console.log(`Smart wallet deployed? ${isDeployed}`);
+      logger.info(`Smart wallet deployed? ${isDeployed}`);
       
       if (isDeployed) {
-        console.log(`Smart wallet already deployed at ${walletAddress}`);
+        logger.info(`Smart wallet already deployed at ${walletAddress}`);
         return walletAddress;
       }
       
-      console.log(`Deploying new smart wallet for ${userAddress}...`);
+      logger.info(`Deploying new smart wallet for ${userAddress}...`);
       
-      // Deploy new wallet with updated gas settings
-      const tx = await this.factory.createWallet(
-        userAddress, 
-        salt,
-        this.gasSettings // Use the gas settings defined in constructor
+      // Get signed contract via platform wallet provider
+      const signedFactory = await this.platformWalletProvider.getSignedContract(
+        this.factoryAddress,
+        SmartWalletFactory.abi,
+        'deploy_wallet'
       );
       
-      console.log(`Deployment transaction submitted: ${tx.hash}`);
+      // Deploy new wallet with updated gas settings
+      const tx = await signedFactory.createWallet(
+        userAddress, 
+        salt,
+        this.gasSettings
+      );
+      
+      logger.info(`Deployment transaction submitted: ${tx.hash}`);
       
       // Wait for the transaction to be mined
-      console.log('Waiting for deployment confirmation...');
+      logger.info('Waiting for deployment confirmation...');
       const receipt = await tx.wait();
       
       if (receipt.status !== 1) {
         throw new Error('Smart wallet deployment failed');
       }
       
-      console.log(`Smart wallet deployment confirmed, tx: ${receipt.transactionHash}`);
+      logger.info(`Smart wallet deployment confirmed, tx: ${receipt.transactionHash}`);
       
       // Verify deployment was successful
       const verifyCode = await this.provider.getCode(walletAddress);
@@ -109,30 +134,13 @@ class SmartWalletService {
       // Wait for a short time to ensure state is updated on the blockchain
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      console.log(`Smart wallet successfully deployed at ${walletAddress}`);
+      logger.info(`Smart wallet successfully deployed at ${walletAddress}`);
       return walletAddress;
     } catch (error) {
-      console.error('Error deploying wallet:', error);
-      if (error.reason) console.error('Error reason:', error.reason);
-      if (error.code) console.error('Error code:', error.code);
-      if (error.body) console.error('Error response body:', error.body);
-      throw error;
-    }
-  }
-  
-  // Check if wallet is deployed - ENHANCED WITH MORE DETAILED LOGS
-  async isWalletDeployed(walletAddress) {
-    try {
-      console.log(`Checking if wallet is deployed at ${walletAddress}...`);
-      const code = await this.provider.getCode(walletAddress);
-      const isDeployed = code !== '0x';
-      
-      console.log(`Wallet deployment status: ${isDeployed ? 'Deployed' : 'Not deployed'}`);
-      console.log(`Code length: ${(code.length - 2) / 2} bytes`);
-      
-      return isDeployed;
-    } catch (error) {
-      console.error('Error checking if wallet is deployed:', error);
+      logger.error('Error deploying wallet:', error);
+      if (error.reason) logger.error('Error reason:', error.reason);
+      if (error.code) logger.error('Error code:', error.code);
+      if (error.body) logger.error('Error response body:', error.body);
       throw error;
     }
   }
@@ -142,7 +150,7 @@ class SmartWalletService {
     try {
       const feeData = await this.provider.getFeeData();
       
-      console.log("Current network gas prices:", {
+      logger.info("Current network gas prices:", {
         maxFeePerGas: ethers.utils.formatUnits(feeData.maxFeePerGas, "gwei") + " GWEI",
         maxPriorityFeePerGas: ethers.utils.formatUnits(feeData.maxPriorityFeePerGas, "gwei") + " GWEI"
       });
@@ -160,7 +168,7 @@ class SmartWalletService {
       
       return this.gasSettings;
     } catch (error) {
-      console.error('Error fetching gas prices:', error);
+      logger.error('Error fetching gas prices:', error);
       // Return default values if fetching fails
       return this.gasSettings;
     }

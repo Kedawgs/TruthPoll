@@ -1,16 +1,6 @@
 // backend/controllers/pollController.js
 const { successResponse, paginatedResponse } = require('../utils/responseHandler');
-const PollService = require('../services/pollService');
-const ethers = require('ethers');
-
-// Initialize provider
-const provider = new ethers.providers.JsonRpcProvider(process.env.POLYGON_AMOY_RPC_URL);
-
-// Initialize the poll service
-const pollService = new PollService(
-  provider, 
-  process.env.PLATFORM_WALLET_PRIVATE_KEY
-);
+const logger = require('../utils/logger');
 
 /**
  * @desc    Create a new poll
@@ -19,6 +9,9 @@ const pollService = new PollService(
  */
 exports.createPoll = async (req, res, next) => {
   try {
+    // Get the poll service from app.locals
+    const pollService = req.app.locals.pollService;
+    
     const pollData = {
       title: req.body.title,
       description: req.body.description,
@@ -45,6 +38,9 @@ exports.createPoll = async (req, res, next) => {
  */
 exports.getPolls = async (req, res, next) => {
   try {
+    // Get the poll service from app.locals
+    const pollService = req.app.locals.pollService;
+    
     // Parse query parameters
     const options = {
       page: parseInt(req.query.page, 10) || 1,
@@ -72,6 +68,9 @@ exports.getPolls = async (req, res, next) => {
  */
 exports.getPoll = async (req, res, next) => {
   try {
+    // Get the poll service from app.locals
+    const pollService = req.app.locals.pollService;
+    
     const pollData = await pollService.getPoll(req.params.id);
     return successResponse(res, pollData);
   } catch (error) {
@@ -86,6 +85,9 @@ exports.getPoll = async (req, res, next) => {
  */
 exports.votePoll = async (req, res, next) => {
   try {
+    // Get the poll service from app.locals
+    const pollService = req.app.locals.pollService;
+    
     const voteData = {
       optionIndex: req.body.optionIndex,
       voterAddress: req.body.voterAddress,
@@ -107,6 +109,9 @@ exports.votePoll = async (req, res, next) => {
  */
 exports.endPoll = async (req, res, next) => {
   try {
+    // Get the poll service from app.locals
+    const pollService = req.app.locals.pollService;
+    
     const result = await pollService.endPoll(req.params.id, req.user);
     return successResponse(res, result);
   } catch (error) {
@@ -121,6 +126,9 @@ exports.endPoll = async (req, res, next) => {
  */
 exports.reactivatePoll = async (req, res, next) => {
   try {
+    // Get the poll service from app.locals
+    const pollService = req.app.locals.pollService;
+    
     const { duration = 0 } = req.body;
     
     const result = await pollService.reactivatePoll(
@@ -142,6 +150,9 @@ exports.reactivatePoll = async (req, res, next) => {
  */
 exports.claimReward = async (req, res, next) => {
   try {
+    // Get the poll service from app.locals
+    const pollService = req.app.locals.pollService;
+    
     const { pollAddress, signature } = req.body;
     
     const result = await pollService.claimReward(
@@ -163,6 +174,9 @@ exports.claimReward = async (req, res, next) => {
  */
 exports.getClaimableRewards = async (req, res, next) => {
   try {
+    // Get the poll service from app.locals
+    const pollService = req.app.locals.pollService;
+    
     const userAddress = req.params.address;
     
     const claimableRewards = await pollService.getClaimableRewards(userAddress);
@@ -180,6 +194,9 @@ exports.getClaimableRewards = async (req, res, next) => {
  */
 exports.getUserNonce = async (req, res, next) => {
   try {
+    // Get the poll service from app.locals
+    const pollService = req.app.locals.pollService;
+    
     const { pollAddress, userAddress } = req.params;
     
     const nonceData = await pollService.getUserNonce(pollAddress, userAddress);
@@ -197,6 +214,9 @@ exports.getUserNonce = async (req, res, next) => {
  */
 exports.searchPolls = async (req, res, next) => {
   try {
+    // Get the poll service from app.locals
+    const pollService = req.app.locals.pollService;
+    
     const { query } = req.query;
     
     if (!query || query.trim().length < 1) {

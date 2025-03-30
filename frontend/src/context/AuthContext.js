@@ -58,7 +58,7 @@ export const AuthProvider = ({ children }) => {
       
       setLoading(false);
     } catch (error) {
-      logger.error("Error checking authentication:", error);
+      logger.error("Error checking authentication:", error.message);
       setLoading(false);
     }
   };
@@ -79,7 +79,7 @@ export const AuthProvider = ({ children }) => {
         const network = await magicProvider.getNetwork();
         setChainId(network.chainId);
       } catch (err) {
-        logger.error("Error getting network:", err);
+        logger.error("Error getting network:", err.message);
       }
       
       setLoading(false);
@@ -92,7 +92,7 @@ export const AuthProvider = ({ children }) => {
         signer: magicProvider.getSigner()
       };
     } catch (error) {
-      logger.error("Error initializing Magic user:", error);
+      logger.error("Error initializing Magic user:", error.message);
       setLoading(false);
       throw error;
     }
@@ -138,7 +138,7 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
       return null;
     } catch (error) {
-      logger.error("Error initializing wallet connection:", error);
+      logger.error("Error initializing wallet connection:", error.message);
       setLoading(false);
       throw error;
     }
@@ -166,7 +166,7 @@ export const AuthProvider = ({ children }) => {
     window.location.reload();
   };
   
-  // Connect wallet
+  // Connect wallet - IMPROVED ERROR HANDLING
   const connectWallet = async () => {
     try {
       if (!window.ethereum) {
@@ -200,7 +200,7 @@ export const AuthProvider = ({ children }) => {
             const signerAddress = await newSigner.getAddress();
             logger.info("Signer address verified:", signerAddress);
           } catch (signerError) {
-            logger.error("Signer error:", signerError);
+            logger.error("Signer error:", signerError.message);
             setError('Failed to access wallet. Please reconnect.');
             setLoading(false);
             return false;
@@ -222,7 +222,15 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
       return false;
     } catch (error) {
-      logger.error("Error connecting wallet:", error);
+      // Improved error handling
+      if (error.code === 4001) {
+        // User rejected request - log a simple message without the stack trace
+        logger.warn("User denied wallet connection request");
+      } else {
+        // For other errors, sanitize the logged error
+        logger.error(`Wallet connection error: ${error.message || 'Unknown error'}`);
+      }
+      
       setError('Failed to connect wallet');
       setLoading(false);
       return false;
@@ -256,7 +264,7 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Unsupported login method');
       }
     } catch (error) {
-      logger.error("Error logging in with Magic:", error);
+      logger.error("Error logging in with Magic:", error.message);
       setError(error.message || 'Failed to login');
       setLoading(false);
       return false;
@@ -283,7 +291,7 @@ export const AuthProvider = ({ children }) => {
             });
           }
         } catch (disconnectError) {
-          logger.info("Could not revoke permissions:", disconnectError);
+          logger.info("Could not revoke permissions:", disconnectError.message);
           // Continue with fallback
         }
       }
@@ -335,7 +343,7 @@ export const AuthProvider = ({ children }) => {
       
       return true;
     } catch (error) {
-      logger.error("Error logging out:", error);
+      logger.error("Error logging out:", error.message);
       return false;
     }
   };

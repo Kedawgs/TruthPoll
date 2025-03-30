@@ -1,8 +1,11 @@
 const { Magic } = require('@magic-sdk/admin');
 
+// Check if the key exists
+if (!process.env.MAGIC_SECRET_KEY) {
+  throw new Error('MAGIC_SECRET_KEY environment variable is not set. Authentication will not work properly.');
+}
+
 // Initialize Magic Admin SDK with your secret key
 const magic = new Magic(process.env.MAGIC_SECRET_KEY);
-console.log("Magic Secret Key exists:", !!process.env.MAGIC_SECRET_KEY); 
-// This will log 'true' if the key exists and 'false' if it doesn't
 
 module.exports = magic;

@@ -1,13 +1,8 @@
+// backend/controllers/contractController.js
 const ethers = require('ethers');
-const ContractService = require('../services/contractService');
 const fs = require('fs');
 const path = require('path');
-
-// Create provider
-const provider = new ethers.providers.JsonRpcProvider(process.env.POLYGON_AMOY_RPC_URL);
-
-// Initialize contract service
-const contractService = new ContractService(provider);
+const logger = require('../utils/logger');
 
 /**
  * @desc    Deploy factory contract
@@ -16,6 +11,9 @@ const contractService = new ContractService(provider);
  */
 exports.deployFactory = async (req, res) => {
   try {
+    // Get contract service from app.locals
+    const contractService = req.app.locals.contractService;
+    
     const factoryAddress = await contractService.deployFactory();
     
     // Save the factory address to .env.local
@@ -32,7 +30,7 @@ exports.deployFactory = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error deploying factory:', error);
+    logger.error('Error deploying factory:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Server Error'
@@ -47,6 +45,9 @@ exports.deployFactory = async (req, res) => {
  */
 exports.getPollsByCreator = async (req, res) => {
   try {
+    // Get contract service from app.locals
+    const contractService = req.app.locals.contractService;
+    
     const creatorAddress = req.params.address;
     
     const pollAddresses = await contractService.getPollsByCreator(creatorAddress);
@@ -60,7 +61,7 @@ exports.getPollsByCreator = async (req, res) => {
             details: await contractService.getPollDetails(address)
           };
         } catch (error) {
-          console.error(`Error fetching details for poll ${address}:`, error);
+          logger.error(`Error fetching details for poll ${address}:`, error);
           return {
             address,
             error: 'Failed to fetch details'
@@ -75,7 +76,7 @@ exports.getPollsByCreator = async (req, res) => {
       data: pollDetails
     });
   } catch (error) {
-    console.error('Error getting polls by creator:', error);
+    logger.error('Error getting polls by creator:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Server Error'
@@ -90,6 +91,9 @@ exports.getPollsByCreator = async (req, res) => {
  */
 exports.getAllPolls = async (req, res) => {
   try {
+    // Get contract service from app.locals
+    const contractService = req.app.locals.contractService;
+    
     const pollAddresses = await contractService.getAllPolls();
     
     res.status(200).json({
@@ -98,7 +102,7 @@ exports.getAllPolls = async (req, res) => {
       data: pollAddresses
     });
   } catch (error) {
-    console.error('Error getting all polls:', error);
+    logger.error('Error getting all polls:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Server Error'
@@ -113,6 +117,9 @@ exports.getAllPolls = async (req, res) => {
  */
 exports.getPollDetails = async (req, res) => {
   try {
+    // Get contract service from app.locals
+    const contractService = req.app.locals.contractService;
+    
     const pollAddress = req.params.address;
     
     const pollDetails = await contractService.getPollDetails(pollAddress);
@@ -122,7 +129,7 @@ exports.getPollDetails = async (req, res) => {
       data: pollDetails
     });
   } catch (error) {
-    console.error('Error getting poll details:', error);
+    logger.error('Error getting poll details:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Server Error'

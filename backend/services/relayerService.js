@@ -2,11 +2,12 @@
 const ethers = require('ethers');
 const Poll = require('../artifacts/contracts/Poll.sol/Poll.json');
 const SmartWallet = require('../artifacts/contracts/SmartWalletFactory.sol/SmartWallet.json');
+const logger = require('../utils/logger');
 
 class RelayerService {
-  constructor(provider, platformPrivateKey) {
+  constructor(provider, platformWalletProvider) {
     this.provider = provider;
-    this.platformWallet = new ethers.Wallet(platformPrivateKey, provider);
+    this.platformWalletProvider = platformWalletProvider;
     
     // Default gas settings for Polygon
     this.gasSettings = {
@@ -19,15 +20,15 @@ class RelayerService {
   // For Magic users - directly relay their signed transaction
   async relayMagicVote(pollAddress, voterAddress, optionIndex, signature) {
     try {
-      console.log(`====== ENHANCED DEBUGGING ======`);
-      console.log(`Relaying Magic vote: Poll=${pollAddress}, Voter=${voterAddress}, Option=${optionIndex}`);
-      console.log(`Signature length: ${signature?.length}`);
+      logger.debug(`====== ENHANCED DEBUGGING ======`);
+      logger.debug(`Relaying Magic vote: Poll=${pollAddress}, Voter=${voterAddress}, Option=${optionIndex}`);
+      logger.debug(`Signature length: ${signature?.length}`);
       
       // Get poll contract and check state before voting
       const pollContract = new ethers.Contract(
         pollAddress,
         Poll.abi,
-        this.platformWallet
+        this.provider
       );
       
       // Check poll state to verify vote eligibility
@@ -39,7 +40,7 @@ class RelayerService {
         const endTime = await pollContract.endTime();
         const options = await pollContract.getOptionsCount();
         
-        console.log(`Pre-vote Poll State:`, {
+        logger.debug(`Pre-vote Poll State:`, {
           isActive, 
           hasVoted, 
           isCreator, 
@@ -52,25 +53,25 @@ class RelayerService {
         
         // Common failure conditions
         if (isCreator) {
-          console.error('VOTE WILL FAIL: Poll creator cannot vote on their own poll');
+          logger.error('VOTE WILL FAIL: Poll creator cannot vote on their own poll');
         }
         if (hasVoted) {
-          console.error('VOTE WILL FAIL: User has already voted on this poll');
+          logger.error('VOTE WILL FAIL: User has already voted on this poll');
         }
         if (!isActive) {
-          console.error('VOTE WILL FAIL: Poll is not active');
+          logger.error('VOTE WILL FAIL: Poll is not active');
         }
         if (optionIndex >= options.toNumber()) {
-          console.error('VOTE WILL FAIL: Invalid option index');
+          logger.error('VOTE WILL FAIL: Invalid option index');
         }
       } catch (stateError) {
-        console.error('Error checking poll state:', stateError);
+        logger.error('Error checking poll state:', stateError);
       }
       
       // Split signature into v, r, s
       const { v, r, s } = ethers.utils.splitSignature(signature);
       
-      console.log(`Signature components:`, {
+      logger.debug(`Signature components:`, {
         v, 
         r: r.slice(0, 10) + '...', 
         s: s.slice(0, 10) + '...'
@@ -79,13 +80,13 @@ class RelayerService {
       // Get user's nonce before transaction
       try {
         const nonce = await pollContract.getNonce(voterAddress);
-        console.log(`User's current nonce: ${nonce.toNumber()}`);
+        logger.debug(`User's current nonce: ${nonce.toNumber()}`);
       } catch (nonceError) {
-        console.error('Error fetching nonce:', nonceError);
+        logger.error('Error fetching nonce:', nonceError);
       }
       
       // Print Transaction Params
-      console.log('Transaction Params:', {
+      logger.debug('Transaction Params:', {
         pollAddress,
         voterAddress,
         optionIndex,
@@ -96,25 +97,32 @@ class RelayerService {
         gasLimit: this.gasSettings?.gasLimit?.toString()
       });
       
+      // Get signed contract via platform wallet provider
+      const signedPoll = await this.platformWalletProvider.getSignedContract(
+        pollAddress,
+        Poll.abi,
+        'relay_magic_vote'
+      );
+      
       // Submit the meta-transaction
-      console.log(`Submitting transaction...`);
-      const tx = await pollContract.metaVote(
+      logger.debug(`Submitting transaction...`);
+      const tx = await signedPoll.metaVote(
         voterAddress, 
         optionIndex, 
         v, r, s,
         this.gasSettings
       );
       
-      console.log(`Transaction submitted: ${tx.hash}`);
+      logger.debug(`Transaction submitted: ${tx.hash}`);
       
-      console.log(`Waiting for transaction confirmation...`);
+      logger.debug(`Waiting for transaction confirmation...`);
       const receipt = await tx.wait();
-      console.log(`Transaction confirmed: ${receipt.transactionHash}`);
-      console.log(`Transaction status: ${receipt.status} (1=success, 0=failure)`);
+      logger.debug(`Transaction confirmed: ${receipt.transactionHash}`);
+      logger.debug(`Transaction status: ${receipt.status} (1=success, 0=failure)`);
       
       // Check if transaction succeeded
       if (receipt.status === 0) {
-        console.error('Transaction reverted on-chain despite no throw in JS');
+        logger.error('Transaction reverted on-chain despite no throw in JS');
         throw new Error('Transaction failed on-chain');
       }
       
@@ -123,11 +131,11 @@ class RelayerService {
         success: true
       };
     } catch (error) {
-      console.error('Error relaying Magic vote:', error);
+      logger.error('Error relaying Magic vote:', error);
       // Enhanced error logging
-      if (error.reason) console.error('Error reason:', error.reason);
-      if (error.code) console.error('Error code:', error.code);
-      if (error.receipt) console.error('Transaction receipt status:', error.receipt.status);
+      if (error.reason) logger.error('Error reason:', error.reason);
+      if (error.code) logger.error('Error code:', error.code);
+      if (error.receipt) logger.error('Transaction receipt status:', error.receipt.status);
       
       throw error;
     }
@@ -136,16 +144,16 @@ class RelayerService {
   // For non-Magic users with smart wallets - IMPROVED IMPLEMENTATION
   async relaySmartWalletVote(smartWalletAddress, pollAddress, optionIndex, signature) {
     try {
-      console.log(`====== ENHANCED SMART WALLET VOTE DEBUGGING ======`);
-      console.log(`Relaying Smart Wallet vote: Wallet=${smartWalletAddress}, Poll=${pollAddress}, Option=${optionIndex}`);
-      console.log(`Signature length: ${signature?.length}`);
+      logger.debug(`====== ENHANCED SMART WALLET VOTE DEBUGGING ======`);
+      logger.debug(`Relaying Smart Wallet vote: Wallet=${smartWalletAddress}, Poll=${pollAddress}, Option=${optionIndex}`);
+      logger.debug(`Signature length: ${signature?.length}`);
       
       // Verify the smart wallet is deployed and has code
       const walletCode = await this.provider.getCode(smartWalletAddress);
       if (walletCode === '0x') {
         throw new Error(`Smart wallet at ${smartWalletAddress} is not deployed`);
       }
-      console.log(`Smart wallet code verified, length: ${(walletCode.length - 2) / 2} bytes`);
+      logger.debug(`Smart wallet code verified, length: ${(walletCode.length - 2) / 2} bytes`);
       
       // Check poll state to verify vote eligibility
       try {
@@ -161,7 +169,7 @@ class RelayerService {
         const isCreator = ownerAddress.toLowerCase() === smartWalletAddress.toLowerCase();
         const options = await pollContract.getOptionsCount();
         
-        console.log(`Pre-vote Poll State:`, {
+        logger.debug(`Pre-vote Poll State:`, {
           isActive, 
           hasVoted, 
           isCreator,
@@ -172,55 +180,41 @@ class RelayerService {
         
         // Warn about potential failure conditions
         if (isCreator) {
-          console.error('VOTE WILL FAIL: Smart wallet is the poll creator');
+          logger.error('VOTE WILL FAIL: Smart wallet is the poll creator');
         }
         if (hasVoted) {
-          console.error('VOTE WILL FAIL: Smart wallet has already voted on this poll');
+          logger.error('VOTE WILL FAIL: Smart wallet has already voted on this poll');
         }
         if (!isActive) {
-          console.error('VOTE WILL FAIL: Poll is not active');
+          logger.error('VOTE WILL FAIL: Poll is not active');
         }
         if (optionIndex >= options.toNumber()) {
-          console.error('VOTE WILL FAIL: Invalid option index');
+          logger.error('VOTE WILL FAIL: Invalid option index');
         }
       } catch (stateError) {
-        console.error('Error checking poll state:', stateError);
+        logger.error('Error checking poll state:', stateError);
       }
       
-      // Get Smart Wallet contract
-      const smartWallet = new ethers.Contract(
+      // Get Smart Wallet contract via platform wallet provider
+      const smartWallet = await this.platformWalletProvider.getSignedContract(
         smartWalletAddress,
         SmartWallet.abi,
-        this.platformWallet
+        'relay_smart_wallet_vote'
       );
       
       // Verify the smart wallet's owner
       try {
         const owner = await smartWallet.owner();
-        console.log(`Smart wallet owner: ${owner}`);
+        logger.debug(`Smart wallet owner: ${owner}`);
       } catch (ownerError) {
-        console.error('Error getting smart wallet owner:', ownerError);
+        logger.error('Error getting smart wallet owner:', ownerError);
       }
       
       // Encode the vote function call
       const pollInterface = new ethers.utils.Interface(Poll.abi);
       const callData = pollInterface.encodeFunctionData('vote', [optionIndex]);
       
-      console.log(`Call data encoded: ${callData}`);
-      
-      // Parse signature
-      let sigComponents;
-      try {
-        sigComponents = ethers.utils.splitSignature(signature);
-        console.log(`Signature components:`, {
-          v: sigComponents.v,
-          r: sigComponents.r.slice(0, 10) + '...',
-          s: sigComponents.s.slice(0, 10) + '...'
-        });
-      } catch (sigError) {
-        console.error('Error parsing signature:', sigError);
-        throw new Error('Invalid signature format');
-      }
+      logger.debug(`Call data encoded: ${callData}`);
       
       // Execute transaction params
       const executeParams = {
@@ -230,7 +224,7 @@ class RelayerService {
         signature
       };
       
-      console.log('Execute parameters:', {
+      logger.debug('Execute parameters:', {
         target: executeParams.target,
         value: executeParams.value,
         callDataLength: executeParams.callData.length,
@@ -238,7 +232,7 @@ class RelayerService {
       });
       
       // Execute through the smart wallet
-      console.log(`Submitting transaction to smart wallet...`);
+      logger.debug(`Submitting transaction to smart wallet...`);
       const tx = await smartWallet.execute(
         pollAddress,      // target
         0,                // value
@@ -247,10 +241,10 @@ class RelayerService {
         this.gasSettings  // gas settings
       );
       
-      console.log(`Transaction submitted: ${tx.hash}`);
+      logger.debug(`Transaction submitted: ${tx.hash}`);
       
       // Wait for transaction confirmation with timeout
-      console.log('Waiting for transaction confirmation...');
+      logger.debug('Waiting for transaction confirmation...');
       const receipt = await Promise.race([
         tx.wait(),
         new Promise((_, reject) => 
@@ -258,8 +252,8 @@ class RelayerService {
         )
       ]);
       
-      console.log(`Transaction confirmed: ${receipt.transactionHash}`);
-      console.log(`Transaction status: ${receipt.status} (1=success, 0=failure)`);
+      logger.debug(`Transaction confirmed: ${receipt.transactionHash}`);
+      logger.debug(`Transaction status: ${receipt.status} (1=success, 0=failure)`);
       
       // Check transaction status
       if (receipt.status === 0) {
@@ -271,11 +265,11 @@ class RelayerService {
         success: true
       };
     } catch (error) {
-      console.error('Error relaying smart wallet vote:', error);
+      logger.error('Error relaying smart wallet vote:', error);
       // Enhanced error logging
-      if (error.reason) console.error('Error reason:', error.reason);
-      if (error.code) console.error('Error code:', error.code);
-      if (error.receipt) console.error('Transaction receipt status:', error.receipt?.status);
+      if (error.reason) logger.error('Error reason:', error.reason);
+      if (error.code) logger.error('Error code:', error.code);
+      if (error.receipt) logger.error('Transaction receipt status:', error.receipt?.status);
       
       throw error;
     }
@@ -284,43 +278,44 @@ class RelayerService {
   // Claim reward for Magic users
   async relayMagicRewardClaim(pollAddress, claimerAddress, signature) {
     try {
-      console.log(`Relaying Magic reward claim: Poll=${pollAddress}, Claimer=${claimerAddress}`);
-      
-      const pollContract = new ethers.Contract(
-        pollAddress,
-        Poll.abi,
-        this.platformWallet
-      );
+      logger.info(`Relaying Magic reward claim: Poll=${pollAddress}, Claimer=${claimerAddress}`);
       
       // Split signature into v, r, s
       const { v, r, s } = ethers.utils.splitSignature(signature);
       
+      // Get signed poll contract
+      const signedPoll = await this.platformWalletProvider.getSignedContract(
+        pollAddress,
+        Poll.abi,
+        'relay_magic_reward_claim'
+      );
+      
       // Submit the meta-transaction
-      const tx = await pollContract.metaClaimReward(
+      const tx = await signedPoll.metaClaimReward(
         claimerAddress, 
         v, r, s,
         this.gasSettings
       );
       
-      console.log(`Transaction submitted: ${tx.hash}`);
+      logger.info(`Transaction submitted: ${tx.hash}`);
       
       const receipt = await tx.wait();
-      console.log(`Transaction confirmed: ${receipt.transactionHash}`);
+      logger.info(`Transaction confirmed: ${receipt.transactionHash}`);
       
       return {
         transactionHash: receipt.transactionHash,
         success: true
       };
     } catch (error) {
-      console.error('Error relaying Magic reward claim:', error);
+      logger.error('Error relaying Magic reward claim:', error);
       throw error;
     }
   }
   
-  // Claim reward through smart wallet - IMPROVED IMPLEMENTATION
+  // Claim reward through smart wallet
   async relaySmartWalletRewardClaim(smartWalletAddress, pollAddress, signature) {
     try {
-      console.log(`Relaying Smart Wallet reward claim: Wallet=${smartWalletAddress}, Poll=${pollAddress}`);
+      logger.info(`Relaying Smart Wallet reward claim: Wallet=${smartWalletAddress}, Poll=${pollAddress}`);
       
       // Verify the smart wallet is deployed
       const walletCode = await this.provider.getCode(smartWalletAddress);
@@ -329,17 +324,17 @@ class RelayerService {
       }
       
       // Get Smart Wallet contract
-      const smartWallet = new ethers.Contract(
+      const smartWallet = await this.platformWalletProvider.getSignedContract(
         smartWalletAddress,
         SmartWallet.abi,
-        this.platformWallet
+        'relay_smart_wallet_reward_claim'
       );
       
       // Encode the claimReward function call
       const pollInterface = new ethers.utils.Interface(Poll.abi);
       const callData = pollInterface.encodeFunctionData('claimReward', []);
       
-      console.log(`Claim reward calldata: ${callData}`);
+      logger.info(`Claim reward calldata: ${callData}`);
       
       // Check eligibility before trying to claim
       try {
@@ -350,21 +345,21 @@ class RelayerService {
         );
         
         const canClaim = await pollContract.canClaimReward(smartWalletAddress);
-        console.log(`Can claim reward? ${canClaim}`);
+        logger.info(`Can claim reward? ${canClaim}`);
         
         if (!canClaim) {
           const hasVoted = await pollContract.hasVoted(smartWalletAddress);
           const hasClaimedReward = false; // We'd need to check this on the contract
           const isActive = await pollContract.isPollActive();
           
-          console.log('Claim eligibility factors:', {
+          logger.info('Claim eligibility factors:', {
             hasVoted,
             hasClaimedReward,
             isActive
           });
         }
       } catch (checkError) {
-        console.error('Error checking claim eligibility:', checkError);
+        logger.error('Error checking claim eligibility:', checkError);
       }
       
       // Execute through the smart wallet
@@ -376,11 +371,11 @@ class RelayerService {
         this.gasSettings
       );
       
-      console.log(`Transaction submitted: ${tx.hash}`);
+      logger.info(`Transaction submitted: ${tx.hash}`);
       
       const receipt = await tx.wait();
-      console.log(`Transaction confirmed: ${receipt.transactionHash}`);
-      console.log(`Transaction status: ${receipt.status}`);
+      logger.info(`Transaction confirmed: ${receipt.transactionHash}`);
+      logger.info(`Transaction status: ${receipt.status}`);
       
       if (receipt.status === 0) {
         throw new Error('Smart wallet transaction reverted on-chain');
@@ -391,7 +386,7 @@ class RelayerService {
         success: true
       };
     } catch (error) {
-      console.error('Error relaying smart wallet reward claim:', error);
+      logger.error('Error relaying smart wallet reward claim:', error);
       throw error;
     }
   }
@@ -399,13 +394,13 @@ class RelayerService {
   // Fund poll with USDT rewards via smart wallet
   async relaySmartWalletFundRewards(smartWalletAddress, pollAddress, amount, signature) {
     try {
-      console.log(`Relaying Smart Wallet fund rewards: Wallet=${smartWalletAddress}, Poll=${pollAddress}, Amount=${amount}`);
+      logger.info(`Relaying Smart Wallet fund rewards: Wallet=${smartWalletAddress}, Poll=${pollAddress}, Amount=${amount}`);
       
       // Get Smart Wallet contract
-      const smartWallet = new ethers.Contract(
+      const smartWallet = await this.platformWalletProvider.getSignedContract(
         smartWalletAddress,
         SmartWallet.abi,
-        this.platformWallet
+        'relay_smart_wallet_fund_rewards'
       );
       
       // Encode the fundRewards function call
@@ -421,97 +416,102 @@ class RelayerService {
         this.gasSettings
       );
       
-      console.log(`Transaction submitted: ${tx.hash}`);
+      logger.info(`Transaction submitted: ${tx.hash}`);
       
       const receipt = await tx.wait();
-      console.log(`Transaction confirmed: ${receipt.transactionHash}`);
+      logger.info(`Transaction confirmed: ${receipt.transactionHash}`);
       
       return {
         transactionHash: receipt.transactionHash,
         success: true
       };
     } catch (error) {
-      console.error('Error relaying smart wallet fund rewards:', error);
+      logger.error('Error relaying smart wallet fund rewards:', error);
       throw error;
     }
   }
   
   // Try direct vote (bypass meta transaction for testing)
-  // Enhanced directVote with more debugging
   async directVote(pollAddress, optionIndex) {
     try {
-      console.log(`====== DIRECT VOTE TESTING WITH FULL DIAGNOSTICS ======`);
-      console.log(`Directly voting on poll: Poll=${pollAddress}, Option=${optionIndex}`);
+      logger.info(`====== DIRECT VOTE TESTING WITH FULL DIAGNOSTICS ======`);
+      logger.info(`Directly voting on poll: Poll=${pollAddress}, Option=${optionIndex}`);
       
+      // Get poll contract
       const pollContract = new ethers.Contract(
         pollAddress,
         Poll.abi,
-        this.platformWallet
+        this.provider
       );
       
-      // Check all possible vote restrictions
-      const platformWalletAddress = this.platformWallet.address;
-      console.log(`Platform wallet address: ${platformWalletAddress}`);
+      // Get platform signer
+      const signer = await this.platformWalletProvider.getSigner('direct_vote_test');
+      const signedPoll = pollContract.connect(signer);
       
+      // Platform wallet address
+      const platformWalletAddress = await this.platformWalletProvider.getAddress();
+      logger.info(`Platform wallet address: ${platformWalletAddress}`);
+      
+      // Check all possible vote restrictions
       const ownerAddress = await pollContract.owner();
-      console.log(`Poll owner address: ${ownerAddress}`);
+      logger.info(`Poll owner address: ${ownerAddress}`);
       
       const isCreator = ownerAddress.toLowerCase() === platformWalletAddress.toLowerCase();
-      console.log(`Is platform wallet the poll creator? ${isCreator}`);
+      logger.info(`Is platform wallet the poll creator? ${isCreator}`);
       
       const hasVoted = await pollContract.hasVoted(platformWalletAddress);
-      console.log(`Has platform wallet already voted? ${hasVoted}`);
+      logger.info(`Has platform wallet already voted? ${hasVoted}`);
       
       const isActive = await pollContract.isPollActive();
-      console.log(`Is poll active? ${isActive}`);
+      logger.info(`Is poll active? ${isActive}`);
       
       const endTime = await pollContract.endTime();
-      console.log(`Poll end time: ${endTime} (0 means no end time)`);
+      logger.info(`Poll end time: ${endTime} (0 means no end time)`);
       
       const currentTime = Math.floor(Date.now() / 1000);
-      console.log(`Current time: ${currentTime}`);
+      logger.info(`Current time: ${currentTime}`);
       
       const hasEnded = endTime.toNumber() > 0 && currentTime >= endTime.toNumber();
-      console.log(`Has poll ended? ${hasEnded}`);
+      logger.info(`Has poll ended? ${hasEnded}`);
       
       const optionsCount = await pollContract.getOptionsCount();
-      console.log(`Total options: ${optionsCount}`);
+      logger.info(`Total options: ${optionsCount}`);
       
       const isValidOption = optionIndex < optionsCount;
-      console.log(`Is option index valid? ${isValidOption}`);
+      logger.info(`Is option index valid? ${isValidOption}`);
       
       // Log expected result
       if (isCreator) {
-        console.log("VOTE WILL FAIL: Platform wallet is the poll creator");
+        logger.info("VOTE WILL FAIL: Platform wallet is the poll creator");
       } else if (hasVoted) {
-        console.log("VOTE WILL FAIL: Platform wallet has already voted");
+        logger.info("VOTE WILL FAIL: Platform wallet has already voted");
       } else if (!isActive) {
-        console.log("VOTE WILL FAIL: Poll is not active");
+        logger.info("VOTE WILL FAIL: Poll is not active");
       } else if (hasEnded) {
-        console.log("VOTE WILL FAIL: Poll has ended");
+        logger.info("VOTE WILL FAIL: Poll has ended");
       } else if (!isValidOption) {
-        console.log("VOTE WILL FAIL: Invalid option index");
+        logger.info("VOTE WILL FAIL: Invalid option index");
       } else {
-        console.log("Vote should succeed - no obvious restrictions detected");
+        logger.info("Vote should succeed - no obvious restrictions detected");
       }
       
       // Try to vote anyway
-      console.log(`Submitting vote transaction...`);
-      const tx = await pollContract.vote(optionIndex, this.gasSettings);
+      logger.info(`Submitting vote transaction...`);
+      const tx = await signedPoll.vote(optionIndex, this.gasSettings);
       
-      console.log(`Transaction submitted: ${tx.hash}`);
+      logger.info(`Transaction submitted: ${tx.hash}`);
       
       const receipt = await tx.wait();
-      console.log(`Transaction confirmed: ${receipt.transactionHash}`);
-      console.log(`Transaction status: ${receipt.status} (1=success, 0=failure)`);
+      logger.info(`Transaction confirmed: ${receipt.transactionHash}`);
+      logger.info(`Transaction status: ${receipt.status} (1=success, 0=failure)`);
       
       return {
         transactionHash: receipt.transactionHash,
         success: receipt.status === 1,
-        platformAddress: this.platformWallet.address
+        platformAddress: platformWalletAddress
       };
     } catch (error) {
-      console.error('Error in direct vote process:', error);
+      logger.error('Error in direct vote process:', error);
       // Try to determine exact failure reason from error message
       let failureReason = "Unknown - See full error above";
       
@@ -528,12 +528,40 @@ class RelayerService {
         failureReason = "Invalid option index";
       }
       
-      console.log("FAILURE REASON:", failureReason);
-      if (error.reason) console.error("Error reason:", error.reason);
-      if (error.code) console.error("Error code:", error.code);
-      if (error.receipt) console.error("Transaction receipt status:", error.receipt.status);
+      logger.info("FAILURE REASON:", failureReason);
+      if (error.reason) logger.error("Error reason:", error.reason);
+      if (error.code) logger.error("Error code:", error.code);
+      if (error.receipt) logger.error("Transaction receipt status:", error.receipt.status);
       
       throw error;
+    }
+  }
+  
+  // Update gas settings - utility method
+  async updateGasSettings() {
+    try {
+      const feeData = await this.provider.getFeeData();
+      
+      this.gasSettings = {
+        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.gt(ethers.utils.parseUnits("25", "gwei")) 
+          ? feeData.maxPriorityFeePerGas 
+          : ethers.utils.parseUnits("30", "gwei"),
+        maxFeePerGas: feeData.maxFeePerGas.gt(ethers.utils.parseUnits("30", "gwei"))
+          ? feeData.maxFeePerGas
+          : ethers.utils.parseUnits("35", "gwei"),
+        gasLimit: 3000000
+      };
+      
+      logger.info("Updated gas settings:", {
+        maxPriorityFeePerGas: ethers.utils.formatUnits(this.gasSettings.maxPriorityFeePerGas, "gwei") + " GWEI",
+        maxFeePerGas: ethers.utils.formatUnits(this.gasSettings.maxFeePerGas, "gwei") + " GWEI",
+        gasLimit: this.gasSettings.gasLimit
+      });
+      
+      return this.gasSettings;
+    } catch (error) {
+      logger.error("Error updating gas settings:", error);
+      return this.gasSettings;
     }
   }
 }
