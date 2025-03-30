@@ -1,19 +1,20 @@
 // src/pages/CreatePoll.js
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Web3Context } from '../context/Web3Context';
+import { useAppContext } from '../hooks/useAppContext';
 
 const CreatePoll = () => {
   const navigate = useNavigate();
   const { 
     createPoll, 
     isConnected, 
-    error: web3Error, 
     authType,
     account,
     openAuthModal,
-    deploySmartWalletIfNeeded
-  } = useContext(Web3Context);
+    deploySmartWalletIfNeeded,
+    pollLoading,
+    pollError
+  } = useAppContext();
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -21,13 +22,7 @@ const CreatePoll = () => {
   const [duration, setDuration] = useState('0'); // 0 means no end time
   const [category, setCategory] = useState('General');
   const [tags, setTags] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
-  // Add debug logging to see what's happening with auth state
-  useEffect(() => {
-    console.log("Create Poll - Auth state:", { isConnected, authType, account });
-  }, [isConnected, authType, account]);
   
   // Categories list
   const categories = [
@@ -96,7 +91,6 @@ const CreatePoll = () => {
       .filter(tag => tag.length > 0);
     
     try {
-      setLoading(true);
       setError('');
       
       // For wallet users (non-Magic), make sure smart wallet is deployed
@@ -123,8 +117,7 @@ const CreatePoll = () => {
       navigate(`/polls/${response.data.poll._id}`);
     } catch (err) {
       console.error('Error creating poll:', err);
-      setError(err.response?.data?.error || 'Failed to create poll');
-      setLoading(false);
+      setError(err.message || 'Failed to create poll');
     }
   };
   
@@ -158,9 +151,9 @@ const CreatePoll = () => {
         </div>
       )}
       
-      {web3Error && (
+      {pollError && (
         <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">
-          <p>{web3Error}</p>
+          <p>{pollError}</p>
         </div>
       )}
       
@@ -299,10 +292,10 @@ const CreatePoll = () => {
         <div className="flex justify-end">
           <button
             type="submit"
-            disabled={loading}
+            disabled={pollLoading}
             className="btn btn-primary"
           >
-            {loading ? 'Creating Poll...' : 'Create Poll'}
+            {pollLoading ? 'Creating Poll...' : 'Create Poll'}
           </button>
         </div>
       </form>

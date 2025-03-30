@@ -1,29 +1,31 @@
 // src/pages/PollDetail.js
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Web3Context } from '../context/Web3Context';
-import { ethers } from 'ethers';
+import { useAppContext } from '../hooks/useAppContext';
 
 const PollDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  
+  // Get data from context using the unified hook
   const { 
-    getPoll, 
-    votePoll, 
     isConnected, 
     account, 
     authType,
     openAuthModal,
-    claimReward
-  } = useContext(Web3Context);
+    userProfile,
+    getPoll, 
+    votePoll, 
+    claimReward,
+    pollLoading,
+    pollError
+  } = useAppContext();
   
   const [poll, setPoll] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedOption, setSelectedOption] = useState(null);
-  const [voting, setVoting] = useState(false);
   const [voteSuccess, setVoteSuccess] = useState(false);
-  const [claiming, setClaiming] = useState(false);
   const [claimSuccess, setClaimSuccess] = useState(false);
   
   // Check if current user is creator
@@ -84,7 +86,6 @@ const PollDetail = () => {
     }
     
     try {
-      setVoting(true);
       setError(null);
       
       // Uses the unified votePoll method (works with both Magic and smart wallets)
@@ -94,7 +95,6 @@ const PollDetail = () => {
       const response = await getPoll(id);
       setPoll(response.data);
       
-      setVoting(false);
       setVoteSuccess(true);
       
       // Clear success message after 3 seconds
@@ -103,8 +103,7 @@ const PollDetail = () => {
       }, 3000);
     } catch (err) {
       console.error('Error voting:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to submit vote');
-      setVoting(false);
+      setError(err.message || 'Failed to submit vote');
     }
   };
   
@@ -116,13 +115,11 @@ const PollDetail = () => {
     }
     
     try {
-      setClaiming(true);
       setError(null);
       
       // Uses the unified claimReward method (works with both Magic and smart wallets)
       await claimReward(poll.contractAddress);
       
-      setClaiming(false);
       setClaimSuccess(true);
       
       // Clear success message after 3 seconds
@@ -131,8 +128,7 @@ const PollDetail = () => {
       }, 3000);
     } catch (err) {
       console.error('Error claiming reward:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to claim reward');
-      setClaiming(false);
+      setError(err.message || 'Failed to claim reward');
     }
   };
   
@@ -305,6 +301,12 @@ const PollDetail = () => {
         </div>
       )}
       
+      {pollError && (
+        <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">
+          <p>{pollError}</p>
+        </div>
+      )}
+      
       {voteSuccess && (
         <div className="mb-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-700">
           <p>Your vote has been successfully recorded!</p>
@@ -331,7 +333,7 @@ const PollDetail = () => {
                 checked={selectedOption === index}
                 onChange={() => setSelectedOption(index)}
                 className="mr-2"
-                disabled={!poll.onChain?.isActive || voting || voteSuccess || isCreator || hasUserVoted()}
+                disabled={!poll.onChain?.isActive || pollLoading || voteSuccess || isCreator || hasUserVoted()}
               />
               <label htmlFor={`option-${index}`} className="font-medium">
                 {option}
@@ -361,20 +363,20 @@ const PollDetail = () => {
         {poll.onChain?.isActive && !hasUserVoted() && !isCreator && (
           <button
             onClick={handleVote}
-            disabled={selectedOption === null || !isConnected || voting || voteSuccess || isCreator}
+            disabled={selectedOption === null || !isConnected || pollLoading || voteSuccess || isCreator}
             className="btn btn-primary"
           >
-            {voting ? 'Submitting Vote...' : 'Vote'}
+            {pollLoading ? 'Submitting Vote...' : 'Vote'}
           </button>
         )}
         
         {canClaimReward() && (
           <button
             onClick={handleClaimReward}
-            disabled={claiming || claimSuccess}
+            disabled={pollLoading || claimSuccess}
             className="btn btn-primary bg-yellow-600 hover:bg-yellow-700"
           >
-            {claiming ? 'Claiming Reward...' : 'Claim USDT Reward'}
+            {pollLoading ? 'Claiming Reward...' : 'Claim USDT Reward'}
           </button>
         )}
       </div>

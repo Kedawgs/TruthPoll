@@ -1,14 +1,14 @@
 // src/App.js
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Web3Provider, Web3Context } from './context/Web3Context';
+import { AppProvider } from './context/AppContext';
+import { useAppContext } from './hooks/useAppContext';
+
 import Navbar from './components/Navbar'; 
 import Home from './pages/Home';
 import PollsList from './pages/PollsList';
 import PollDetail from './pages/PollDetail';
 import CreatePoll from './pages/CreatePoll';
-import SignUp from './pages/SignUp';
-import Login from './pages/Login';
 import Leaderboard from './pages/Leaderboard';
 import Activity from './pages/Activity';
 import MagicRedirect from './components/MagicRedirect'; 
@@ -18,6 +18,7 @@ import NotFound from './pages/NotFound';
 import AuthModal from './components/AuthModal';
 import UsernameModal from './components/UsernameModal';
 
+// Main App Component
 function App() {
   // App state
   const [appSupport, setAppSupport] = useState({
@@ -91,29 +92,26 @@ function App() {
   }
 
   return (
-    <Web3Provider>
+    <AppProvider>
       <Router>
         <AppContent />
       </Router>
-    </Web3Provider>
+    </AppProvider>
   );
 }
 
-// Separate component to use Web3Context
+// Separate component to use contexts
 function AppContent() {
   const { 
-    showAuthModal, 
-    closeAuthModal, 
     isConnected, 
     account,
+    logout, 
     needsUsername,
-    logout 
-  } = useContext(Web3Context);
+    openAuthModal 
+  } = useAppContext();
 
   // Protected route component
   const ProtectedRoute = ({ children }) => {
-    const { isConnected, openAuthModal } = useContext(Web3Context);
-    
     if (!isConnected) {
       // Open the auth modal instead of redirecting
       openAuthModal();
@@ -126,12 +124,8 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Use the new Navbar component */}
-      <Navbar 
-        isLoggedIn={isConnected} 
-        userAccount={account}
-        logout={logout}
-      />
+      {/* Use the Navbar component */}
+      <Navbar />
       
       <main className="container mx-auto px-4 py-8 flex-grow">
         <Routes>
@@ -148,8 +142,6 @@ function AppContent() {
               </ProtectedRoute>
             } 
           />
-          <Route path="/signup" element={<SignUp />} />
-          <Route path="/login" element={<Login />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/magic-callback" element={<MagicRedirect />} />
@@ -159,7 +151,7 @@ function AppContent() {
       
       <footer className="bg-white border-t py-6 mt-auto">
         <div className="container mx-auto px-4 text-center text-gray-500 text-sm">
-          <p>© {new Date().getFullYear()} PollMaker. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} TruthPoll. All rights reserved.</p>
           <div className="mt-2 flex justify-center space-x-4">
             <a href="/privacy" className="hover:text-gray-700">Privacy Policy</a>
             <a href="/terms" className="hover:text-gray-700">Terms of Service</a>
@@ -169,7 +161,7 @@ function AppContent() {
       </footer>
       
       {/* Authentication Modal */}
-      <AuthModal isOpen={showAuthModal} onClose={closeAuthModal} />
+      <AuthModal />
       
       {/* Username Modal - Only shown when needed */}
       {isConnected && needsUsername && <UsernameModal />}

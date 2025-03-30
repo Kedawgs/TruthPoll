@@ -1,12 +1,23 @@
-import React, { useEffect, useState } from 'react';
+// src/components/MagicRedirect.js
+import React, { useEffect, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AuthContext } from '../context/AppContext';
 import createMagicInstance from '../config/magic';
 
 const MagicRedirect = () => {
   const [status, setStatus] = useState('Finalizing authentication...');
   const navigate = useNavigate();
+  
+  // Using AuthContext directly since we only need auth functions
+  const { isConnected } = useContext(AuthContext);
 
   useEffect(() => {
+    // If already connected, redirect home
+    if (isConnected) {
+      navigate('/');
+      return;
+    }
+
     const completeAuthentication = async () => {
       try {
         // Get Magic instance
@@ -64,7 +75,7 @@ const MagicRedirect = () => {
     };
     
     completeAuthentication();
-  }, [navigate]);
+  }, [navigate, isConnected]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">

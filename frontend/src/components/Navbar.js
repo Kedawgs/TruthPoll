@@ -1,22 +1,34 @@
 // src/components/Navbar.js
-import React, { useState, useContext, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Web3Context } from '../context/Web3Context';
+import { useAppContext } from '../hooks/useAppContext';
 import './Navbar.css';
 import Sidebar from './Sidebar';
 import fullLogo from '../assets/test123.png'; // Update this path to your actual image file
 import api from '../utils/api';
 
-const Navbar = ({ isLoggedIn, userAccount, logout }) => {
+const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Get data from context
+  const { 
+    isConnected, 
+    account, 
+    authType,
+    logout,
+    openAuthModal,
+    usdtBalance,
+    refreshUSDTBalance,
+    userProfile
+  } = useAppContext();
+  
+  // Component state
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  const [usdtBalance, setUsdtBalance] = useState("0.00");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const hoverTimerRef = useRef(null);
   const hoverDelayRef = useRef(null);
   const searchInputRef = useRef(null);
-  const { getUSDTBalance, openAuthModal } = useContext(Web3Context);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,26 +97,15 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
   
   // Fetch USDT balance when user is logged in
   useEffect(() => {
-    const fetchBalance = async () => {
-      if (isLoggedIn && userAccount) {
-        try {
-          // Use getUSDTBalance from context which should now use smart wallets
-          const balance = await getUSDTBalance(userAccount);
-          setUsdtBalance(balance || "0.00");
-        } catch (error) {
-          console.error("Error fetching USDT balance:", error);
-          setUsdtBalance("0.00");
-        }
-      }
-    };
-    
-    fetchBalance();
-    
-    // Poll for balance updates every 30 seconds
-    const intervalId = setInterval(fetchBalance, 30000);
-    
-    return () => clearInterval(intervalId);
-  }, [isLoggedIn, userAccount, getUSDTBalance]);
+    if (isConnected && account) {
+      refreshUSDTBalance();
+      
+      // Poll for balance updates every 30 seconds
+      const intervalId = setInterval(refreshUSDTBalance, 30000);
+      
+      return () => clearInterval(intervalId);
+    }
+  }, [isConnected, account, refreshUSDTBalance]);
   
   // Filter results based on active filter
   useEffect(() => {
@@ -188,9 +189,16 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
   };
   
   // Get first character of address for profile circle
-  const getProfileInitial = (address) => {
-    if (!address) return '?';
-    return address.substring(2, 3).toUpperCase();
+  const getProfileInitial = () => {
+    if (!account) return '?';
+    
+    // If user has a username, use first character
+    if (userProfile && userProfile.username) {
+      return userProfile.username.charAt(0).toUpperCase();
+    }
+    
+    // Otherwise use a character from the address
+    return account.substring(2, 3).toUpperCase();
   };
   
   // Toggle profile dropdown
@@ -262,6 +270,13 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
   // Handle filter change
   const handleFilterChange = (filter) => {
     setActiveFilter(filter);
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    await logout();
+    setShowProfileDropdown(false);
+    navigate('/');
   };
 
   return (
@@ -423,7 +438,7 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
           <div className="nav-divider"></div>
           
           <div className="auth-section">
-            {isLoggedIn ? (
+            {isConnected ? (
               <div className="user-profile">
                 {/* USDT Balance */}
                 <div className="usdt-balance">
@@ -446,14 +461,16 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
                     className="profile-circle"
                     onClick={toggleProfileDropdown}
                   >
-                    {getProfileInitial(userAccount)}
+                    {getProfileInitial()}
                   </div>
                   
                   {/* Profile Dropdown */}
                   {showProfileDropdown && (
                     <div className="profile-dropdown">
                       <div className="dropdown-header">
-                        <div className="dropdown-address">{formatAddress(userAccount)}</div>
+                        <div className="dropdown-address">
+                          {userProfile?.username || formatAddress(account)}
+                        </div>
                       </div>
                       <div className="dropdown-divider"></div>
                       <Link to="/profile" className="dropdown-item">
@@ -470,7 +487,7 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
                         </svg>
                         Rewards
                       </Link>
-                      <button className="dropdown-item" onClick={logout}>
+                      <button className="dropdown-item" onClick={handleLogout}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                           <polyline points="16 17 21 12 16 7"></polyline>
@@ -491,7 +508,7 @@ const Navbar = ({ isLoggedIn, userAccount, logout }) => {
           </div>
           
           {/* Only show hamburger menu when not logged in */}
-          {!isLoggedIn && (
+          {!isConnected && (
             <div 
               className="menu-button"
               onMouseEnter={handleMenuMouseEnter}

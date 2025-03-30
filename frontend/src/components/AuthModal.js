@@ -1,23 +1,24 @@
 // src/components/AuthModal.js
-import React, { useState, useContext } from 'react';
-import { Web3Context } from '../context/Web3Context';
-import createMagicInstance from '../config/magic';
+import React, { useState } from 'react';
+import { useAppContext } from '../hooks/useAppContext';
 import googleIcon from '../assets/google-icon.svg';
 import metamaskIconModern from '../assets/metamask-icon-modern.svg';
 import coinbaseIcon from '../assets/coinbase-icon.svg';
 import phantomIcon from '../assets/phantom-icon.svg';
 
-const AuthModal = ({ isOpen, onClose }) => {
+const AuthModal = () => {
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
   const [showEmailInput, setShowEmailInput] = useState(false); // Start with wallet options
   
   const { 
+    showAuthModal,
+    closeAuthModal,
     loginWithMagic, 
     connectWallet,
-    loading, 
-    error
-  } = useContext(Web3Context);
+    authLoading, 
+    authError
+  } = useAppContext();
   
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
@@ -34,7 +35,7 @@ const AuthModal = ({ isOpen, onClose }) => {
     const success = await loginWithMagic('email', { email });
     
     if (success) {
-      onClose();
+      closeAuthModal();
     }
   };
   
@@ -50,17 +51,17 @@ const AuthModal = ({ isOpen, onClose }) => {
     const success = await connectWallet();
     
     if (success) {
-      onClose();
+      closeAuthModal();
     }
   };
 
-  if (!isOpen) return null;
+  if (!showAuthModal) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-lg shadow-md p-8 relative">
         <button 
-          onClick={onClose}
+          onClick={closeAuthModal}
           className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -70,9 +71,9 @@ const AuthModal = ({ isOpen, onClose }) => {
         
         <h2 className="text-2xl font-bold text-center mb-6">Welcome to TruthPoll</h2>
         
-        {error && (
+        {authError && (
           <div className="mb-4 p-3 bg-red-100 border-l-4 border-red-500 text-red-700">
-            <p>{error}</p>
+            <p>{authError}</p>
           </div>
         )}
         
@@ -106,10 +107,10 @@ const AuthModal = ({ isOpen, onClose }) => {
             </div>
             <button
               type="submit"
-              disabled={loading}
+              disabled={authLoading}
               className="w-full bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
             >
-              {loading ? 'Signing in...' : 'Continue'}
+              {authLoading ? 'Signing in...' : 'Continue'}
             </button>
           </form>
         ) : (
@@ -117,7 +118,7 @@ const AuthModal = ({ isOpen, onClose }) => {
           <>
             <button
               onClick={handleGoogleLogin}
-              disabled={loading}
+              disabled={authLoading}
               className="w-full flex items-center justify-center bg-white border border-gray-300 rounded-md py-2 px-4 text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
             >
               <img src={googleIcon} alt="Google" className="h-5 w-5 mr-2" />

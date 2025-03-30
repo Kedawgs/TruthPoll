@@ -1,13 +1,13 @@
 // src/components/Sidebar.js
-import React, { useContext } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Web3Context } from '../context/Web3Context';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAppContext } from '../hooks/useAppContext';
 import './Sidebar.css';
 
 const Sidebar = ({ isOpen, onClose, onMouseEnter, onMouseLeave }) => {
   const navigate = useNavigate();
-  const { isConnected, openAuthModal } = useContext(Web3Context);
-  const [lightMode, setLightMode] = React.useState(false);
+  const { isConnected, openAuthModal } = useAppContext();
+  const [lightMode, setLightMode] = useState(false);
   
   const handleNavigation = (path) => {
     navigate(path);

@@ -1,8 +1,13 @@
-import React, { useEffect, useState, useContext } from 'react';
-import { Web3Context } from '../context/Web3Context';
+// src/pages/PollsList.js
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAppContext } from '../hooks/useAppContext';
 import PollCard from '../components/PollCard';
 
 const PollsList = () => {
+  const { getPolls, pollLoading } = useAppContext();
+  
+  // Component state
   const [polls, setPolls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -10,8 +15,6 @@ const PollsList = () => {
   const [category, setCategory] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOnly, setActiveOnly] = useState(false);
-  
-  const { getPolls } = useContext(Web3Context);
   
   // Categories list
   const categories = [
@@ -167,9 +170,10 @@ const PollsList = () => {
       </div>
       
       {/* Polls Grid */}
-      {loading ? (
+      {loading || pollLoading ? (
         <div className="text-center py-12">
-          <p>Loading polls...</p>
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-600"></div>
+          <p className="mt-4">Loading polls...</p>
         </div>
       ) : polls.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

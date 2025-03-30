@@ -1,22 +1,22 @@
 // src/components/UsernameModal.js
-import React, { useState, useContext, useEffect } from 'react';
-import { Web3Context } from '../context/Web3Context';
-import api from '../utils/api';
+import React, { useState, useEffect } from 'react';
+import { useAppContext } from '../hooks/useAppContext';
 
 const UsernameModal = () => {
+  // State for form and interaction
   const [username, setUsername] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [autoUsername, setAutoUsername] = useState('');
   
-  const { 
-    account, 
-    setUserProfile, 
-    setNeedsUsername, 
+  // Get data from context
+  const {
+    account,
+    profileLoading,
+    profileError,
+    setUsername: saveUsername,
     skipUsernameSetup,
     generateUsernameFromAddress
-  } = useContext(Web3Context);
+  } = useAppContext();
 
   // Generate auto username when component mounts
   useEffect(() => {
@@ -50,45 +50,20 @@ const UsernameModal = () => {
     e.preventDefault();
     
     if (!username.trim()) {
-      setError('Please enter a username');
       return;
     }
 
     if (!termsAgreed) {
-      setError('Please agree to the Terms of Use');
       return;
     }
     
-    try {
-      setLoading(true);
-      setError('');
-      
-      // Save username to backend
-      const response = await api.post('/users/username', { 
-        username: username.trim(),
-        address: account
-      });
-      
-      if (response.data.success) {
-        // Update user profile in context
-        setUserProfile({ username: username.trim() });
-        setNeedsUsername(false);
-      } else {
-        setError(response.data.error || 'Failed to save username');
-      }
-    } catch (err) {
-      console.error('Error saving username:', err);
-      setError(err.response?.data?.error || 'Failed to save username');
-    } finally {
-      setLoading(false);
-    }
+    // Save username to backend
+    await saveUsername(username.trim());
   };
 
   const handleSkip = async () => {
     if (termsAgreed) {
       await skipUsernameSetup();
-    } else {
-      setError('Please agree to the Terms of Use first');
     }
   };
 
@@ -107,9 +82,9 @@ const UsernameModal = () => {
           </div>
           
           <form onSubmit={handleSubmit}>
-            {error && (
+            {profileError && (
               <div className="mb-4 p-2 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm">
-                <p>{error}</p>
+                <p>{profileError}</p>
               </div>
             )}
             
@@ -141,10 +116,10 @@ const UsernameModal = () => {
             <div className="flex flex-col gap-2">
               <button
                 type="submit"
-                disabled={loading || !username.trim() || !termsAgreed}
+                disabled={profileLoading || !username.trim() || !termsAgreed}
                 className="w-full bg-blue-600 text-white py-2.5 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition duration-200 font-medium"
               >
-                Continue
+                {profileLoading ? 'Saving...' : 'Continue'}
               </button>
               
               {termsAgreed && (

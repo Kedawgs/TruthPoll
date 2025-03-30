@@ -1,13 +1,13 @@
 // src/pages/Home.js
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Web3Context } from '../context/Web3Context';
+import { useAppContext } from '../hooks/useAppContext';
 import PollCard from '../components/PollCard';
 
 const Home = () => {
   const [recentPolls, setRecentPolls] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { getPolls, isConnected, openAuthModal } = useContext(Web3Context);
+  const { getPolls, isConnected, openAuthModal } = useAppContext();
 
   useEffect(() => {
     const fetchRecentPolls = async () => {
@@ -64,7 +64,8 @@ const Home = () => {
         
         {loading ? (
           <div className="text-center py-12">
-            <p>Loading recent polls...</p>
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-600"></div>
+            <p className="mt-4">Loading recent polls...</p>
           </div>
         ) : recentPolls.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
