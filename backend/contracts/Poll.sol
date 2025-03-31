@@ -5,8 +5,10 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+// Updated import for ReentrancyGuard in OpenZeppelin v5
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract Poll is Ownable {
+contract Poll is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
     
@@ -24,7 +26,7 @@ contract Poll is Ownable {
     
     // Voting data structures
     mapping(address => uint256) public votes;  // Maps voter address to their vote (1-indexed)
-    mapping(address => bool) public hasClaimedReward; // Track reward claims
+    mapping(address => bool) public hasVotedAndRewarded; // Track votes and rewards
     mapping(uint256 => uint256) public voteCount;  // Maps option index to number of votes
     uint256 public totalVotes;  // Total number of votes cast
     
@@ -33,7 +35,7 @@ contract Poll is Ownable {
     
     // Events for important state changes
     event Voted(address indexed voter, uint256 option);
-    event RewardClaimed(address indexed voter, uint256 amount);
+    event RewardPaid(address indexed voter, uint256 amount);
     event PollEnded();
     event PollReactivated();
     event RewardsFunded(address indexed funder, uint256 amount);
@@ -42,8 +44,6 @@ contract Poll is Ownable {
     bytes32 private immutable _DOMAIN_SEPARATOR;
     bytes32 private constant _VOTE_TYPEHASH = 
         keccak256("Vote(address voter,uint256 option,uint256 nonce)");
-    bytes32 private constant _CLAIM_TYPEHASH = 
-        keccak256("ClaimReward(address claimer,uint256 nonce)");
     
     constructor(
         string memory _title,
@@ -88,15 +88,15 @@ contract Poll is Ownable {
         );
     }
     
-    // Fund the poll with USDT rewards
-    function fundRewards(uint256 amount) external {
+    // Fund the poll with USDT rewards - only owner can call
+    function fundRewards(uint256 amount) external nonReentrant onlyOwner {
         usdtToken.safeTransferFrom(msg.sender, address(this), amount);
         totalRewards += amount;
         emit RewardsFunded(msg.sender, amount);
     }
     
     // Regular vote function (for wallet users)
-    function vote(uint256 _option) external {
+    function vote(uint256 _option) external nonReentrant {
         _vote(msg.sender, _option);
     }
     
@@ -107,7 +107,7 @@ contract Poll is Ownable {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external {
+    ) external nonReentrant {
         // Recreate the message hash that was signed
         bytes32 digest = keccak256(
             abi.encodePacked(
@@ -127,7 +127,7 @@ contract Poll is Ownable {
         _vote(_voter, _option);
     }
     
-    // Internal vote logic
+    // Internal vote logic - updated to include immediate reward
     function _vote(address _voter, uint256 _option) internal {
         // Validation checks
         require(isActive, "Poll is not active");
@@ -141,60 +141,21 @@ contract Poll is Ownable {
         voteCount[_option]++;
         totalVotes++;
         
-        // Emit event
+        // Emit vote event
         emit Voted(_voter, _option);
-    }
-    
-    // Claim reward
-    function claimReward() external {
-        require(!isActive || block.timestamp >= endTime, "Poll must be ended");
-        require(votes[msg.sender] > 0, "Must have voted to claim reward");
-        require(!hasClaimedReward[msg.sender], "Reward already claimed");
-        require(rewardPerVoter > 0, "No rewards available");
-        require(totalRewards >= rewardPerVoter, "Insufficient reward funds");
         
-        hasClaimedReward[msg.sender] = true;
-        totalRewards -= rewardPerVoter;
-        
-        usdtToken.safeTransfer(msg.sender, rewardPerVoter);
-        emit RewardClaimed(msg.sender, rewardPerVoter);
-    }
-    
-    // Meta-transaction claim reward
-    function metaClaimReward(
-        address _claimer,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external {
-        // Recreate the message hash that was signed
-        bytes32 digest = keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                _DOMAIN_SEPARATOR,
-                keccak256(abi.encode(_CLAIM_TYPEHASH, _claimer, _nonces[_claimer]))
-            )
-        );
-        
-        // Recover signer from the signature
-        address signer = ecrecover(digest, v, r, s);
-        require(signer == _claimer, "Invalid signature");
-        
-        // Increment nonce
-        _nonces[_claimer]++;
-        
-        // Claim logic
-        require(!isActive || block.timestamp >= endTime, "Poll must be ended");
-        require(votes[_claimer] > 0, "Must have voted to claim reward");
-        require(!hasClaimedReward[_claimer], "Reward already claimed");
-        require(rewardPerVoter > 0, "No rewards available");
-        require(totalRewards >= rewardPerVoter, "Insufficient reward funds");
-        
-        hasClaimedReward[_claimer] = true;
-        totalRewards -= rewardPerVoter;
-        
-        usdtToken.safeTransfer(_claimer, rewardPerVoter);
-        emit RewardClaimed(_claimer, rewardPerVoter);
+        // Handle immediate reward distribution if rewards are set
+        if (rewardPerVoter > 0 && !hasVotedAndRewarded[_voter]) {
+            require(totalRewards >= rewardPerVoter, "Insufficient reward funds");
+            
+            // Mark as rewarded and reduce total available rewards
+            hasVotedAndRewarded[_voter] = true;
+            totalRewards -= rewardPerVoter;
+            
+            // Transfer reward immediately
+            usdtToken.safeTransfer(_voter, rewardPerVoter);
+            emit RewardPaid(_voter, rewardPerVoter);
+        }
     }
     
     // End poll
@@ -217,7 +178,7 @@ contract Poll is Ownable {
     }
     
     // Withdraw remaining rewards after poll ends
-    function withdrawRemainingRewards() external onlyOwner {
+    function withdrawRemainingRewards() external onlyOwner nonReentrant {
         require(!isActive || block.timestamp >= endTime, "Poll must be ended");
         uint256 amount = totalRewards;
         totalRewards = 0;
@@ -275,14 +236,8 @@ contract Poll is Ownable {
         return _nonces[_user];
     }
     
-    // Check if user can claim reward
-    function canClaimReward(address _user) external view returns (bool) {
-        if(hasClaimedReward[_user]) return false;
-        if(votes[_user] == 0) return false;
-        if(rewardPerVoter == 0) return false;
-        if(totalRewards < rewardPerVoter) return false;
-        if(isActive && (endTime == 0 || block.timestamp < endTime)) return false;
-        
-        return true;
+    // Check if rewards are available
+    function getAvailableRewards() external view returns (uint256) {
+        return totalRewards;
     }
 }

@@ -340,6 +340,8 @@ class PollService {
         throw new ValidationError("Invalid option selected");
       } else if (error.message.includes("Invalid signature")) {
         throw new ValidationError("Invalid signature. Please try again.");
+      } else if (error.message.includes("Insufficient reward funds")) {
+        throw new ValidationError("This poll has insufficient reward funds. The poll creator needs to add more funds.");
       }
       
       if (error instanceof ValidationError || 
@@ -462,104 +464,53 @@ class PollService {
   }
   
   /**
-   * Claim reward for a poll
-   * @param {String} pollAddress - Poll contract address
-   * @param {String} signature - Claim signature
-   * @param {Object} user - User info from auth middleware
-   * @returns {Object} Transaction result
+   * Get rewards received by a user
+   * @param {string} userAddress - User address
+   * @returns {Array} Received rewards information
    */
-  async claimReward(pollAddress, signature, user) {
-    try {
-      if (!pollAddress || !signature) {
-        throw new ValidationError('Please provide poll address and signature');
-      }
-      
-      const { isMagicUser } = user || {};
-      const userAddress = user.publicAddress;
-      
-      logger.info(`Reward claim requested: Poll=${pollAddress}, User=${userAddress}`);
-      
-      // For Magic users, relay directly
-      if (isMagicUser) {
-        logger.info(`Processing Magic user reward claim: ${userAddress}`);
-        
-        const result = await this.relayerService.relayMagicRewardClaim(
-          pollAddress,
-          userAddress,
-          signature
-        );
-        
-        return result;
-      } else {
-        logger.info(`Processing non-Magic user reward claim via smart wallet: ${userAddress}`);
-        
-        // For non-Magic users - use smart wallet
-        const smartWalletAddress = await this.smartWalletService.getWalletAddress(userAddress);
-        
-        // Verify smart wallet is deployed
-        const isDeployed = await this.smartWalletService.isWalletDeployed(smartWalletAddress);
-        
-        if (!isDeployed) {
-          await this.smartWalletService.deployWalletIfNeeded(userAddress);
-          
-          // Wait for deployment confirmation
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-        
-        // Relay through smart wallet
-        const result = await this.relayerService.relaySmartWalletRewardClaim(
-          smartWalletAddress,
-          pollAddress,
-          signature
-        );
-        
-        return result;
-      }
-    } catch (error) {
-      logger.error(`Error claiming reward for poll ${pollAddress}: ${error.message}`);
-      
-      if (error instanceof ValidationError) {
-        throw error;
-      }
-      
-      throw new BlockchainError('Failed to claim reward', error);
-    }
-  }
-  
-  /**
-   * Get claimable rewards for a user
-   * @param {String} userAddress - User address
-   * @returns {Array} Claimable rewards
-   */
-  async getClaimableRewards(userAddress) {
+  async getReceivedRewards(userAddress) {
     try {
       // Find all polls with rewards
       const polls = await Poll.find({ hasRewards: true });
       
-      logger.info(`Checking claimable rewards for user ${userAddress} across ${polls.length} polls`);
+      logger.info(`Checking received rewards for user ${userAddress} across ${polls.length} polls`);
       
-      // Check which rewards are claimable
-      const claimableRewards = await Promise.all(
+      // Check which rewards have been received
+      const receivedRewards = await Promise.all(
         polls.map(async (poll) => {
-          const canClaim = await this.contractService.canClaimReward(poll.contractAddress, userAddress);
-          const hasVoted = await this.contractService.hasUserVoted(poll.contractAddress, userAddress);
-          
-          return {
-            pollId: poll._id,
-            pollAddress: poll.contractAddress,
-            pollTitle: poll.title,
-            canClaim,
-            hasVoted,
-            rewardAmount: poll.rewardPerVoter
-          };
+          try {
+            const hasVoted = await this.contractService.hasUserVoted(poll.contractAddress, userAddress);
+            // Using the updated contract method
+            const hasReceivedReward = await this.contractService.hasUserReceivedReward(poll.contractAddress, userAddress);
+            
+            return {
+              pollId: poll._id,
+              pollAddress: poll.contractAddress,
+              pollTitle: poll.title,
+              hasVoted,
+              hasReceivedReward,
+              rewardAmount: poll.rewardPerVoter
+            };
+          } catch (error) {
+            logger.error(`Error checking rewards for poll ${poll._id}: ${error.message}`);
+            return {
+              pollId: poll._id,
+              pollAddress: poll.contractAddress,
+              pollTitle: poll.title,
+              hasVoted: false,
+              hasReceivedReward: false,
+              rewardAmount: poll.rewardPerVoter,
+              error: 'Failed to check reward status'
+            };
+          }
         })
       );
       
       // Filter to only include polls where user has voted
-      return claimableRewards.filter(reward => reward.hasVoted);
+      return receivedRewards.filter(reward => reward.hasVoted);
     } catch (error) {
-      logger.error(`Error getting claimable rewards for ${userAddress}: ${error.message}`);
-      throw new Error('Failed to get claimable rewards');
+      logger.error(`Error getting received rewards for ${userAddress}: ${error.message}`);
+      throw new Error('Failed to get received rewards');
     }
   }
   

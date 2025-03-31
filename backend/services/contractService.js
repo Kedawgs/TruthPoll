@@ -82,6 +82,8 @@ class ContractService {
       throw error;
     }
   }
+
+  
   
   // Fund poll with rewards
   async fundPollRewards(pollAddress, amount) {
@@ -115,7 +117,7 @@ class ContractService {
     }
   }
   
-  // Get poll details
+  // Get poll details - update to handle hasVotedAndRewarded instead of hasClaimedReward
   async getPollDetails(pollAddress) {
     try {
       logger.info(`Getting details for poll ${pollAddress}`);
@@ -245,8 +247,8 @@ class ContractService {
     }
   }
   
-  // Check if user can claim reward
-  async canClaimReward(pollAddress, userAddress) {
+  // Add this method to your ContractService class
+  async hasUserReceivedReward(pollAddress, userAddress) {
     try {
       const pollContract = new ethers.Contract(
         pollAddress,
@@ -254,13 +256,13 @@ class ContractService {
         this.provider
       );
       
-      return await pollContract.canClaimReward(userAddress);
+      // Call hasVotedAndRewarded method on the updated contract
+      return await pollContract.hasVotedAndRewarded(userAddress);
     } catch (error) {
-      logger.error(`Error checking if user ${userAddress} can claim reward for poll ${pollAddress}:`, error);
+      logger.error(`Error checking if user ${userAddress} has received rewards for poll ${pollAddress}:`, error);
       return false;
     }
   }
-  
   // Get current nonce for a user
   async getUserNonce(pollAddress, userAddress) {
     try {

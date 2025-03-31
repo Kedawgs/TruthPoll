@@ -177,36 +177,11 @@ exports.reactivatePoll = async (req, res, next) => {
 };
 
 /**
- * @desc    Claim reward for a poll
- * @route   POST /api/polls/claim-reward
- * @access  Private
- */
-exports.claimReward = async (req, res, next) => {
-  try {
-    // Get the poll service from app.locals
-    const pollService = req.app.locals.pollService;
-    
-    // Input validation is now handled by middleware
-    const { pollAddress, signature } = req.body;
-    
-    const result = await pollService.claimReward(
-      pollAddress,
-      signature,
-      req.user
-    );
-    
-    return successResponse(res, result);
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Get claimable rewards for a user
- * @route   GET /api/polls/claimable-rewards/:address
+ * @desc    Get rewards received by a user
+ * @route   GET /api/polls/received-rewards/:address
  * @access  Public
  */
-exports.getClaimableRewards = async (req, res, next) => {
+exports.getReceivedRewards = async (req, res, next) => {
   try {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
@@ -220,9 +195,9 @@ exports.getClaimableRewards = async (req, res, next) => {
       }
     }
     
-    const claimableRewards = await pollService.getClaimableRewards(userAddress);
+    const receivedRewards = await pollService.getReceivedRewards(userAddress);
     
-    return successResponse(res, claimableRewards);
+    return successResponse(res, receivedRewards);
   } catch (error) {
     next(error);
   }

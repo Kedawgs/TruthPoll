@@ -8,55 +8,52 @@ const { validate } = require('../middleware/validation');
 
 // Import validation schemas
 const {
-  createPollSchema,
-  votePollSchema,
-  claimRewardSchema,
-  endPollSchema,
-  reactivatePollSchema,
-  searchPollSchema
+    createPollSchema,
+    votePollSchema,
+    endPollSchema,
+    reactivatePollSchema,
+    searchPollSchema
 } = require('../validations/pollValidation');
 
 // Import the controller
 const {
-  createPoll,
-  getPolls,
-  getPoll,
-  votePoll,
-  endPoll,
-  reactivatePoll,
-  claimReward,
-  getClaimableRewards,
-  getUserNonce,
-  searchPolls
+    createPoll,
+    getPolls,
+    getPoll,
+    votePoll,
+    endPoll,
+    reactivatePoll,
+    getReceivedRewards,
+    getUserNonce,
+    searchPolls
 } = require('../controllers/pollController');
 
 // Poll routes with validation
 router.route('/')
-  .get(getPolls)
-  .post(isAuthenticated, verifyMagicAddress('creator'), validate(createPollSchema), createPoll);
+    .get(getPolls)
+    .post(isAuthenticated, verifyMagicAddress('creator'), validate(createPollSchema), createPoll); // createPoll is protected
 
 router.route('/search')
-  .get(validate(searchPollSchema, 'query'), searchPolls);
+    .get(validate(searchPollSchema, 'query'), searchPolls); // search is public
 
 router.route('/:id')
-  .get(getPoll);
+    .get(getPoll); // get single poll is public
 
 router.route('/:id/vote')
-  .post(validate(votePollSchema), votePoll);
+    .post(isAuthenticated, validate(votePollSchema), votePoll); // *** UPDATED: Added isAuthenticated ***
 
 router.route('/:id/end')
-  .put(isAuthenticated, validate(endPollSchema), endPoll);
+    .put(isAuthenticated, validate(endPollSchema), endPoll); // endPoll is protected
 
 router.route('/:id/reactivate')
-  .put(isAuthenticated, validate(reactivatePollSchema), reactivatePoll);
+    .put(isAuthenticated, validate(reactivatePollSchema), reactivatePoll); // reactivatePoll is protected
 
-router.route('/claim-reward')
-  .post(validate(claimRewardSchema), claimReward);
+// Public route, controller handles authorization checks if user is logged in
+router.route('/received-rewards/:address')
+    .get(getReceivedRewards);
 
-router.route('/claimable-rewards/:address')
-  .get(getClaimableRewards);
-
+// Public route, controller handles authorization checks if user is logged in
 router.route('/nonce/:pollAddress/:userAddress')
-  .get(getUserNonce);
+    .get(getUserNonce);
 
 module.exports = router;

@@ -15,8 +15,7 @@ const PollDetail = () => {
     openAuthModal,
     userProfile,
     getPoll, 
-    votePoll, 
-    claimReward,
+    votePoll,
     pollLoading,
     pollError
   } = useAppContext();
@@ -26,7 +25,7 @@ const PollDetail = () => {
   const [error, setError] = useState(null);
   const [selectedOption, setSelectedOption] = useState(null);
   const [voteSuccess, setVoteSuccess] = useState(false);
-  const [claimSuccess, setClaimSuccess] = useState(false);
+  const [rewardReceived, setRewardReceived] = useState(false);
   
   // Check if current user is creator
   const isCreator = poll?.creator?.toLowerCase() === account?.toLowerCase();
@@ -68,6 +67,68 @@ const PollDetail = () => {
     return parseFloat(amount).toFixed(2);
   };
   
+  // Enhanced hasUserVoted function with multiple detection methods
+  const hasUserVoted = () => {
+    if (!poll?.onChain || !account) return false;
+    
+    // Check if we directly have the user's vote index
+    if (poll.onChain.userVote !== undefined && poll.onChain.userVote !== null) {
+      return true;
+    }
+    
+    // Poll.sol tracks votes in a mapping, which returns a 1-indexed value (0 means not voted)
+    if (poll.onChain.votes !== undefined && poll.onChain.votes > 0) {
+      return true;
+    }
+    
+    // Check for record of voting in the contract
+    if (poll.onChain.hasVoted === true) {
+      return true;
+    }
+    
+    // Check if the user has rewards, meaning they voted
+    if (poll.onChain.hasVotedAndRewarded === true) {
+      return true;
+    }
+    
+    // Check if this poll is in the already voted localStorage
+    try {
+      const alreadyVotedPolls = JSON.parse(localStorage.getItem('alreadyVotedPolls') || '{}');
+      if (alreadyVotedPolls[id]) {
+        return true;
+      }
+    } catch (e) {
+      // In case of localStorage errors, continue checking
+      console.error("LocalStorage error:", e);
+    }
+    
+    return false;
+  };
+  
+  // Handle vote error and track already voted polls
+  const handleVoteError = (err) => {
+    console.error('Error voting:', err);
+    
+    // If the error is likely "already voted", remember this poll
+    if (err.response?.status === 500 || 
+        err.message?.includes('Already voted') || 
+        err.message?.includes('already voted')) {
+      try {
+        const alreadyVotedPolls = JSON.parse(localStorage.getItem('alreadyVotedPolls') || '{}');
+        alreadyVotedPolls[id] = true;
+        localStorage.setItem('alreadyVotedPolls', JSON.stringify(alreadyVotedPolls));
+        
+        // Override the error message to be more user-friendly
+        setError('You have already voted on this poll.');
+      } catch (e) {
+        console.error("LocalStorage error:", e);
+        setError(err.message || 'Failed to submit vote');
+      }
+    } else {
+      setError(err.message || 'Failed to submit vote');
+    }
+  };
+  
   // Handle voting
   const handleVote = async () => {
     if (!isConnected) {
@@ -85,11 +146,26 @@ const PollDetail = () => {
       return;
     }
     
+    // Check if already voted before making the request
+    if (hasUserVoted()) {
+      setError('You have already voted on this poll.');
+      return;
+    }
+    
     try {
       setError(null);
       
       // Uses the unified votePoll method (works with both Magic and smart wallets)
       await votePoll(id, selectedOption);
+      
+      // Record successful vote in localStorage to prevent future attempts
+      try {
+        const alreadyVotedPolls = JSON.parse(localStorage.getItem('alreadyVotedPolls') || '{}');
+        alreadyVotedPolls[id] = true;
+        localStorage.setItem('alreadyVotedPolls', JSON.stringify(alreadyVotedPolls));
+      } catch (e) {
+        console.error("LocalStorage error:", e);
+      }
       
       // Refresh poll data
       const response = await getPoll(id);
@@ -97,38 +173,18 @@ const PollDetail = () => {
       
       setVoteSuccess(true);
       
+      // If this poll has rewards, set the rewardReceived flag
+      if (poll.onChain?.hasRewards) {
+        setRewardReceived(true);
+      }
+      
       // Clear success message after 3 seconds
       setTimeout(() => {
         setVoteSuccess(false);
+        setRewardReceived(false);
       }, 3000);
     } catch (err) {
-      console.error('Error voting:', err);
-      setError(err.message || 'Failed to submit vote');
-    }
-  };
-  
-  // Handle reward claim
-  const handleClaimReward = async () => {
-    if (!isConnected) {
-      openAuthModal();
-      return;
-    }
-    
-    try {
-      setError(null);
-      
-      // Uses the unified claimReward method (works with both Magic and smart wallets)
-      await claimReward(poll.contractAddress);
-      
-      setClaimSuccess(true);
-      
-      // Clear success message after 3 seconds
-      setTimeout(() => {
-        setClaimSuccess(false);
-      }, 3000);
-    } catch (err) {
-      console.error('Error claiming reward:', err);
-      setError(err.message || 'Failed to claim reward');
+      handleVoteError(err);
     }
   };
   
@@ -136,28 +192,6 @@ const PollDetail = () => {
   const calculatePercentage = (optionIndex) => {
     if (!poll?.onChain?.results || !poll.onChain.totalVotes) return 0;
     return Math.round((poll.onChain.results[optionIndex] / poll.onChain.totalVotes) * 100);
-  };
-  
-  // Check if user has already voted
-  const hasUserVoted = () => {
-    if (!poll?.onChain) return false;
-    
-    // Check if there's any vote data
-    return poll.onChain.results.some((count, index) => {
-      const isSelected = poll.onChain.userVote === index;
-      return isSelected && count > 0;
-    });
-  };
-  
-  // Check if user can claim reward
-  const canClaimReward = () => {
-    if (!poll?.onChain) return false;
-    
-    return (
-      poll.onChain.hasRewards && 
-      hasUserVoted() && 
-      (!poll.onChain.isActive || new Date() >= new Date(poll.onChain.endTime))
-    );
   };
   
   if (loading) {
@@ -201,6 +235,8 @@ const PollDetail = () => {
       </div>
     );
   }
+  
+  const userHasVoted = hasUserVoted();
   
   return (
     <div className="max-w-3xl mx-auto my-10 p-8 bg-white rounded-lg shadow-md">
@@ -285,13 +321,25 @@ const PollDetail = () => {
       
       {!isConnected && (
         <div className="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 text-blue-700">
-          <p>Connect your wallet or sign in to vote on this poll.</p>
+          <p>Connect your wallet or sign in with Magic to vote on this poll.</p>
           <button 
             onClick={openAuthModal}
             className="mt-2 text-blue-700 underline"
           >
             Sign In / Connect Wallet
           </button>
+        </div>
+      )}
+      
+      {/* "Already voted" notification */}
+      {isConnected && userHasVoted && (
+        <div className="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 text-blue-700">
+          <p className="font-medium">You have already voted on this poll.</p>
+          {poll.onChain?.hasRewards && (
+            <p className="mt-1">
+              Your reward of {formatUSDT(poll.onChain?.rewardPerVoter)} USDT has been sent to your wallet.
+            </p>
+          )}
         </div>
       )}
       
@@ -310,12 +358,22 @@ const PollDetail = () => {
       {voteSuccess && (
         <div className="mb-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-700">
           <p>Your vote has been successfully recorded!</p>
+          {rewardReceived && poll.onChain?.hasRewards && (
+            <p className="mt-1">Your reward of {formatUSDT(poll.onChain?.rewardPerVoter)} USDT has been sent to your wallet.</p>
+          )}
         </div>
       )}
       
-      {claimSuccess && (
-        <div className="mb-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-700">
-          <p>Your reward has been successfully claimed!</p>
+      {/* Reward information section */}
+      {poll.onChain?.hasRewards && (
+        <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700">
+          <h3 className="font-medium">Reward Information</h3>
+          <p className="mt-1">
+            This poll includes an automatic reward of {formatUSDT(poll.onChain?.rewardPerVoter)} USDT.
+          </p>
+          <p className="mt-1">
+            Rewards are instantly sent to your wallet when you vote!
+          </p>
         </div>
       )}
       
@@ -333,7 +391,7 @@ const PollDetail = () => {
                 checked={selectedOption === index}
                 onChange={() => setSelectedOption(index)}
                 className="mr-2"
-                disabled={!poll.onChain?.isActive || pollLoading || voteSuccess || isCreator || hasUserVoted()}
+                disabled={!poll.onChain?.isActive || pollLoading || voteSuccess || isCreator || userHasVoted}
               />
               <label htmlFor={`option-${index}`} className="font-medium">
                 {option}
@@ -360,23 +418,14 @@ const PollDetail = () => {
       </div>
       
       <div className="flex justify-between">
-        {poll.onChain?.isActive && !hasUserVoted() && !isCreator && (
+        {poll.onChain?.isActive && !isCreator && (
           <button
             onClick={handleVote}
-            disabled={selectedOption === null || !isConnected || pollLoading || voteSuccess || isCreator}
-            className="btn btn-primary"
+            disabled={selectedOption === null || !isConnected || pollLoading || voteSuccess || isCreator || userHasVoted}
+            className={`btn ${userHasVoted ? 'bg-gray-300 text-gray-700 cursor-not-allowed' : 'btn-primary'}`}
           >
-            {pollLoading ? 'Submitting Vote...' : 'Vote'}
-          </button>
-        )}
-        
-        {canClaimReward() && (
-          <button
-            onClick={handleClaimReward}
-            disabled={pollLoading || claimSuccess}
-            className="btn btn-primary bg-yellow-600 hover:bg-yellow-700"
-          >
-            {pollLoading ? 'Claiming Reward...' : 'Claim USDT Reward'}
+            {pollLoading ? 'Submitting Vote...' : 
+             userHasVoted ? 'Already Voted' : 'Vote'}
           </button>
         )}
       </div>

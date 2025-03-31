@@ -52,10 +52,9 @@ export const useAppContext = () => {
     pollError: contract.pollError,
     createPoll: contract.createPoll,
     votePoll: contract.votePoll,
-    claimReward: contract.claimReward,
     getPolls: contract.getPolls,
     getPoll: contract.getPoll,
-    getClaimableRewards: contract.getClaimableRewards,
+    getReceivedRewards: contract.getReceivedRewards,
     endPoll: contract.endPoll,
     reactivatePoll: contract.reactivatePoll,
     

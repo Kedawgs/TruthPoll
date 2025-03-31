@@ -189,91 +189,20 @@ export const ContractProvider = ({ children }) => {
     }
   };
   
-  // Claim rewards - UPDATED to handle Magic users differently
-  const claimReward = async (pollAddress) => {
+  // Get rewards received by a user
+  const getReceivedRewards = useCallback(async () => {
     try {
-      if (!isConnected) {
-        throw new Error('Wallet not connected');
+      if (!isConnected || !account) {
+        return { data: [] };
       }
       
-      setPollLoading(true);
-      setPollError(null);
-      
-      // Sign the claim
-      let signature;
-      
-      if (authType === 'magic') {
-        // For Magic users - sign directly
-        signature = await signMagicRewardClaim(pollAddress);
-      } else {
-        // For wallet users - sign through smart wallet
-        // Create a message hash for the smart wallet to execute
-        const pollInterface = new ethers.utils.Interface([
-          'function claimReward() external'
-        ]);
-        
-        // Encode the claimReward function call
-        const callData = pollInterface.encodeFunctionData('claimReward', []);
-        
-        // Sign the transaction
-        signature = await signSmartWalletTransaction(pollAddress, callData);
-      }
-      
-      // Send to backend for relaying
-      const response = await api.post(`/polls/claim-reward`, {
-        pollAddress,
-        signature
-      });
-      
-      setPollLoading(false);
+      const response = await api.get(`/polls/received-rewards/${account}`);
       return response.data;
     } catch (error) {
-      logger.error("Error claiming reward:", error);
-      setPollError(error.response?.data?.error || error.message || 'Failed to claim reward');
-      setPollLoading(false);
-      throw error;
+      logger.error("Error fetching received rewards:", error);
+      return { data: [] };
     }
-  };
-  
-  // Sign a reward claim with Magic
-  const signMagicRewardClaim = async (pollAddress) => {
-    try {
-      // Get user's nonce
-      const nonceResponse = await api.get(`/polls/nonce/${pollAddress}/${account}`);
-      const nonce = nonceResponse.data.data.nonce;
-      
-      // Create domain data
-      const domain = {
-        name: 'TruthPoll',
-        version: '1',
-        chainId: 80002, // Polygon Amoy
-        verifyingContract: pollAddress
-      };
-      
-      // Define types
-      const types = {
-        ClaimReward: [
-          { name: 'claimer', type: 'address' },
-          { name: 'nonce', type: 'uint256' }
-        ]
-      };
-      
-      // Create value
-      const value = {
-        claimer: account,
-        nonce: nonce
-      };
-      
-      // Sign typed data
-      const magicSigner = provider.getSigner();
-      const signature = await magicSigner._signTypedData(domain, types, value);
-      
-      return signature;
-    } catch (error) {
-      logger.error("Error signing reward claim with Magic:", error);
-      throw error;
-    }
-  };
+  }, [isConnected, account]);
   
   // Get polls
   const getPolls = useCallback(async (params = {}) => {
@@ -296,21 +225,6 @@ export const ContractProvider = ({ children }) => {
       throw error;
     }
   }, []);
-
-  // Get claimable rewards
-  const getClaimableRewards = useCallback(async () => {
-    try {
-      if (!isConnected || !account) {
-        return { data: [] };
-      }
-      
-      const response = await api.get(`/polls/claimable-rewards/${account}`);
-      return response.data;
-    } catch (error) {
-      logger.error("Error fetching claimable rewards:", error);
-      return { data: [] };
-    }
-  }, [isConnected, account]);
 
   // End poll (only for poll creator)
   const endPoll = async (pollId) => {
@@ -381,10 +295,9 @@ export const ContractProvider = ({ children }) => {
         pollError,
         createPoll,
         votePoll,
-        claimReward,
         getPolls,
         getPoll,
-        getClaimableRewards,
+        getReceivedRewards,
         endPoll,
         reactivatePoll
       }}
