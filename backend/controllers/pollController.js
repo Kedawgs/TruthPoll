@@ -1,6 +1,6 @@
 // backend/controllers/pollController.js
 const { successResponse, paginatedResponse } = require('../utils/responseHandler');
-const { ValidationError, AuthorizationError, BlockchainError } = require('../utils/errorTypes');
+const { NotFoundError, AuthorizationError, BlockchainError } = require('../utils/errorTypes');
 const logger = require('../utils/logger');
 
 /**
@@ -13,27 +13,9 @@ exports.createPoll = async (req, res, next) => {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
     
-    // Input validation
-    if (!req.body.title || !req.body.options || !req.body.creator) {
-      return next(new ValidationError('Title, options, and creator are required fields'));
-    }
-    
-    if (!Array.isArray(req.body.options) || req.body.options.length < 2) {
-      return next(new ValidationError('At least two options are required'));
-    }
-    
-    // NOTE: Creator address verification is already done by verifyMagicAddress middleware
-    
-    const pollData = {
-      title: req.body.title,
-      description: req.body.description,
-      options: req.body.options,
-      creator: req.body.creator,
-      duration: req.body.duration,
-      category: req.body.category,
-      tags: req.body.tags,
-      rewardPerVoter: req.body.rewardPerVoter
-    };
+    // Input validation and sanitization is now handled by the middleware
+    // We can directly use the validated data
+    const pollData = req.body;
     
     const result = await pollService.createPoll(pollData);
     
@@ -100,11 +82,8 @@ exports.votePoll = async (req, res, next) => {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
     
+    // Input validation is now handled by middleware
     const { optionIndex, voterAddress, signature } = req.body;
-    
-    if (optionIndex === undefined || !voterAddress || !signature) {
-      return next(new ValidationError('Option index, voter address, and signature are required'));
-    }
     
     // Verify address matches for Magic users
     if (req.user && req.user.isMagicUser) {
@@ -138,7 +117,12 @@ exports.endPoll = async (req, res, next) => {
     // Get poll details first to verify ownership
     const pollData = await pollService.getPoll(req.params.id);
     
-    // Check if the user is the poll creator
+    // Verify poll exists
+    if (!pollData || !pollData.data) {
+      return next(new NotFoundError('Poll not found'));
+    }
+    
+    // Check if the user is the poll creator for Magic users
     if (req.user && req.user.isMagicUser) {
       if (pollData.data.creator.toLowerCase() !== req.user.publicAddress.toLowerCase()) {
         return next(new AuthorizationError('Only the poll creator can end a poll'));
@@ -165,13 +149,19 @@ exports.reactivatePoll = async (req, res, next) => {
     // Get poll details first to verify ownership
     const pollData = await pollService.getPoll(req.params.id);
     
-    // Check if the user is the poll creator
+    // Verify poll exists
+    if (!pollData || !pollData.data) {
+      return next(new NotFoundError('Poll not found'));
+    }
+    
+    // Check if the user is the poll creator for Magic users
     if (req.user && req.user.isMagicUser) {
       if (pollData.data.creator.toLowerCase() !== req.user.publicAddress.toLowerCase()) {
         return next(new AuthorizationError('Only the poll creator can reactivate a poll'));
       }
     }
     
+    // Duration is validated by middleware
     const { duration = 0 } = req.body;
     
     const result = await pollService.reactivatePoll(
@@ -196,11 +186,8 @@ exports.claimReward = async (req, res, next) => {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
     
+    // Input validation is now handled by middleware
     const { pollAddress, signature } = req.body;
-    
-    if (!pollAddress || !signature) {
-      return next(new ValidationError('Poll address and signature are required'));
-    }
     
     const result = await pollService.claimReward(
       pollAddress,
@@ -278,14 +265,8 @@ exports.searchPolls = async (req, res, next) => {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
     
+    // Validation is now handled by middleware
     const { query } = req.query;
-    
-    if (!query || query.trim().length < 1) {
-      return res.status(400).json({
-        success: false,
-        error: 'Please provide a search query'
-      });
-    }
     
     const polls = await pollService.searchPolls(query);
     

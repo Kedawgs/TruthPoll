@@ -1,22 +1,14 @@
 // backend/controllers/smartWalletController.js
-const ethers = require('ethers');
 const logger = require('../utils/logger');
-const { ValidationError, AuthorizationError } = require('../utils/errorTypes');
+const { AuthorizationError } = require('../utils/errorTypes');
 
 exports.getWalletAddress = async (req, res) => {
   try {
+    // Address is validated by middleware
     const userAddress = req.params.address;
     
     // Get the service from app.locals
     const smartWalletService = req.app.locals.smartWalletService;
-    
-    // Validate address format
-    if (!ethers.utils.isAddress(userAddress)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid address format'
-      });
-    }
     
     // Get the counterfactual address
     const walletAddress = await smartWalletService.getWalletAddress(userAddress);
@@ -42,21 +34,37 @@ exports.getWalletAddress = async (req, res) => {
 
 exports.deployWallet = async (req, res) => {
   try {
-    const { userAddress } = req.body;
-    
-    // Validate request
-    if (!userAddress || !ethers.utils.isAddress(userAddress)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Valid userAddress is required'
-      });
-    }
+    // Address validation handled by middleware
+    const { userAddress, signature } = req.body;
     
     // Get the service from app.locals
     const smartWalletService = req.app.locals.smartWalletService;
     
-    // NOTE: Address verification happens in the middleware
-    // We could add extra checks here for non-Magic users
+    // For Magic users, verification is already done by middleware
+    // For non-Magic users, verify the signature
+    if (!req.user?.isMagicUser) {
+      if (!signature) {
+        return res.status(400).json({
+          success: false,
+          error: 'Signature is required for wallet deployment'
+        });
+      }
+      
+      // Validate the signature
+      const isValid = await smartWalletService.validateWalletDeploymentSignature(
+        userAddress,
+        signature
+      );
+      
+      if (!isValid) {
+        return res.status(403).json({
+          success: false,
+          error: 'Invalid signature for wallet deployment'
+        });
+      }
+      
+      logger.info(`Signature validated for wallet deployment: ${userAddress}`);
+    }
     
     // Deploy the wallet
     const walletAddress = await smartWalletService.deployWalletIfNeeded(userAddress);

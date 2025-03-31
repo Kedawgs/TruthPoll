@@ -1,10 +1,10 @@
 // src/context/WalletContext.js
-
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
 import { ethers } from 'ethers';
 import { AuthContext } from './AuthContext';
 import api from '../utils/api';
 import logger from '../utils/logger';
+import { requestWalletDeployment } from '../utils/web3Helper';
 
 // Create context
 export const WalletContext = createContext();
@@ -87,10 +87,12 @@ export const WalletProvider = ({ children }) => {
     }
   };
   
-  // Deploy smart wallet if needed - ONLY for non-Magic users
+  // Deploy smart wallet if needed - IMPROVED with signature validation
   const deploySmartWalletIfNeeded = async () => {
     try {
       setWalletLoading(true);
+      setWalletError(null);
+      
       // Skip for Magic users
       if (authType === 'magic' || !account) {
         setWalletLoading(false);
@@ -99,28 +101,21 @@ export const WalletProvider = ({ children }) => {
       
       // Check if wallet already exists
       let walletAddress = smartWalletAddress;
+      let needsDeployment = false;
       
       if (!walletAddress) {
+        // First try to get the address
         walletAddress = await getSmartWalletAddress(account);
       }
       
-      // If we have an address but it may not be deployed
+      // If we have an address, check if it's deployed
       if (walletAddress) {
         // Check if it's deployed
         const response = await api.get(`/smart-wallets/${account}`);
         
         if (response.data.success && !response.data.data.isDeployed) {
-          // Deploy it
-          const deployResponse = await api.post('/smart-wallets', {
-            userAddress: account
-          });
-          
-          if (deployResponse.data.success) {
-            setSmartWalletAddress(deployResponse.data.data.address);
-            setIsSmartWalletDeployed(true);
-            setWalletLoading(false);
-            return deployResponse.data.data.address;
-          }
+          // Address exists but not deployed
+          needsDeployment = true;
         } else if (response.data.success) {
           // Already deployed
           setWalletLoading(false);
@@ -128,21 +123,34 @@ export const WalletProvider = ({ children }) => {
         }
       } else {
         // We don't have an address, request creation
-        const deployResponse = await api.post('/smart-wallets', {
-          userAddress: account
-        });
-        
-        if (deployResponse.data.success) {
-          setSmartWalletAddress(deployResponse.data.data.address);
-          setIsSmartWalletDeployed(true);
+        needsDeployment = true;
+      }
+      
+      // Deploy if needed
+      if (needsDeployment) {
+        try {
+          // Call the deployment function which handles signature creation
+          logger.info(`Requesting deployment for account: ${account}`);
+          const result = await requestWalletDeployment(account, window.ethereum);
+          
+          if (result.success) {
+            setSmartWalletAddress(result.data.address);
+            setIsSmartWalletDeployed(true);
+            setWalletLoading(false);
+            return result.data.address;
+          } else {
+            throw new Error(result.error || 'Deployment failed');
+          }
+        } catch (deployError) {
+          logger.error("Smart wallet deployment error:", deployError);
+          setWalletError('Failed to deploy smart wallet: ' + (deployError.message || 'Unknown error'));
           setWalletLoading(false);
-          return deployResponse.data.data.address;
+          throw deployError;
         }
       }
       
-      setWalletError('Failed to deploy smart wallet');
       setWalletLoading(false);
-      throw new Error('Failed to deploy smart wallet');
+      return walletAddress;
     } catch (error) {
       logger.error("Error deploying smart wallet:", error);
       setWalletError(error.message || 'Smart wallet deployment failed');
@@ -189,7 +197,7 @@ export const WalletProvider = ({ children }) => {
             provider
           );
           
-          // Try to get decimals, default to 6 for USDT
+          // Try to get decimals, default to a6 for USDT
           let decimals = 6;
           try {
             const tokenDecimals = await tokenContract.decimals();

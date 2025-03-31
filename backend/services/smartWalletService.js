@@ -28,6 +28,50 @@ class SmartWalletService {
     }
   }
   
+  /**
+   * Validate a signature for wallet deployment
+   * @param {string} userAddress - The address of the wallet owner
+   * @param {string} signature - The signature to validate
+   * @returns {Promise<boolean>} Whether the signature is valid
+   */
+  async validateWalletDeploymentSignature(userAddress, signature) {
+    try {
+      logger.debug(`Validating wallet deployment signature for ${userAddress}`);
+      
+      // Normalize the address
+      const normalizedAddress = userAddress.toLowerCase();
+      
+      // Create a unique message that the user must have signed
+      // Including the address in the message prevents signature reuse for other addresses
+      const message = `I authorize the deployment of a smart wallet for ${normalizedAddress} on TruthPoll`;
+      
+      logger.debug(`Validation message: "${message}"`);
+      
+      try {
+        // Recover the signer address from the signature
+        const recoveredAddress = ethers.utils.verifyMessage(message, signature);
+        logger.debug(`Recovered signer address: ${recoveredAddress}`);
+        
+        // Check if recovered address matches the user address (case-insensitive)
+        const isValid = recoveredAddress.toLowerCase() === normalizedAddress;
+        
+        if (!isValid) {
+          logger.warn(`Signature validation failed: recovered=${recoveredAddress}, expected=${normalizedAddress}`);
+        } else {
+          logger.debug(`Signature validated successfully for ${normalizedAddress}`);
+        }
+        
+        return isValid;
+      } catch (signatureError) {
+        logger.error(`Error processing signature: ${signatureError.message}`);
+        return false;
+      }
+    } catch (error) {
+      logger.error(`Error validating wallet deployment signature: ${error.message}`);
+      return false;
+    }
+  }
+  
   // Get wallet address for a user (counterfactual)
   async getWalletAddress(userAddress) {
     try {

@@ -4,6 +4,17 @@ const router = express.Router();
 
 // Import middlewares
 const { isAuthenticated, verifyMagicAddress } = require('../middleware/authMiddleware');
+const { validate } = require('../middleware/validation');
+
+// Import validation schemas
+const {
+  createPollSchema,
+  votePollSchema,
+  claimRewardSchema,
+  endPollSchema,
+  reactivatePollSchema,
+  searchPollSchema
+} = require('../validations/pollValidation');
 
 // Import the controller
 const {
@@ -19,28 +30,28 @@ const {
   searchPolls
 } = require('../controllers/pollController');
 
-// Basic routes
+// Poll routes with validation
 router.route('/')
   .get(getPolls)
-  .post(isAuthenticated, verifyMagicAddress('creator'), createPoll);
+  .post(isAuthenticated, verifyMagicAddress('creator'), validate(createPollSchema), createPoll);
 
 router.route('/search')
-  .get(searchPolls);
+  .get(validate(searchPollSchema, 'query'), searchPolls);
 
 router.route('/:id')
   .get(getPoll);
 
 router.route('/:id/vote')
-  .post(votePoll);
+  .post(validate(votePollSchema), votePoll);
 
 router.route('/:id/end')
-  .put(isAuthenticated, endPoll);
+  .put(isAuthenticated, validate(endPollSchema), endPoll);
 
 router.route('/:id/reactivate')
-  .put(isAuthenticated, reactivatePoll);
+  .put(isAuthenticated, validate(reactivatePollSchema), reactivatePoll);
 
 router.route('/claim-reward')
-  .post(claimReward);
+  .post(validate(claimRewardSchema), claimReward);
 
 router.route('/claimable-rewards/:address')
   .get(getClaimableRewards);
