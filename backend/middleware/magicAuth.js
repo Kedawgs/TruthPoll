@@ -1,3 +1,4 @@
+// backend/middleware/magicAuth.js
 const magic = require('../config/magic');
 
 /**
@@ -26,12 +27,17 @@ const magicAuth = async (req, res, next) => {
       // Get user metadata
       const metadata = await magic.users.getMetadataByToken(didToken);
       
+      // Get admin addresses from environment
+      const adminAddresses = (process.env.ADMIN_ADDRESSES || '').toLowerCase().split(',');
+      const isAdmin = adminAddresses.includes(metadata.publicAddress.toLowerCase());
+      
       // Attach user info to the request
       req.user = {
         issuer: metadata.issuer,
         email: metadata.email,
         publicAddress: metadata.publicAddress,
-        isMagicUser: true
+        isMagicUser: true,
+        isAdmin: isAdmin  // Add admin status flag
       };
       
     } catch (error) {

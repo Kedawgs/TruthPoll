@@ -22,11 +22,23 @@ dotenv.config();
 // Initialize express app
 const app = express();
 
-// Middleware
+// Security middleware
 app.use(helmet()); // Security headers
-app.use(cors()); // Enable CORS
+
+// SECURITY FIX: Configure CORS with proper restrictions
+const corsOptions = {
+  origin: process.env.CORS_ALLOWED_ORIGINS?.split(',') || 'http://localhost:3000',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+};
+app.use(cors(corsOptions));
+
+// Request parsing middleware
 app.use(express.json()); // Parse JSON bodies
 app.use(express.urlencoded({ extended: false })); // Parse URL-encoded bodies
+
+// Authentication middleware
 app.use(magicAuth); // Add Magic authentication middleware
 
 // Request logging middleware

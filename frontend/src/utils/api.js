@@ -10,21 +10,37 @@ const api = axios.create({
 // Add a request interceptor to include auth token
 api.interceptors.request.use(async (config) => {
   try {
-    // Get Magic instance
-    const magic = createMagicInstance();
+    // Check if we have an authenticated session first
+    const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
     
-    if (magic) {
-      const isLoggedIn = await magic.user.isLoggedIn();
+    // If we're already authenticated or trying to authenticate
+    // We don't want to try to add the token for public endpoints or during authentication
+    const isPublicEndpoint = 
+      config.url.includes('/polls/search') || 
+      (config.url.includes('/polls') && config.method === 'get') ||
+      config.url.includes('/auth/verify');
+    
+    if (!isPublicEndpoint) {
+      // Get Magic instance
+      const magic = createMagicInstance();
       
-      if (isLoggedIn) {
+      if (magic) {
         try {
-          // Get DID token
-          const token = await magic.user.getIdToken();
-          if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
+          const isLoggedIn = await magic.user.isLoggedIn();
+          
+          if (isLoggedIn) {
+            try {
+              // Get DID token
+              const token = await magic.user.getIdToken();
+              if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+              }
+            } catch (tokenError) {
+              console.error('Error getting auth token:', tokenError);
+            }
           }
-        } catch (tokenError) {
-          console.error('Error getting auth token:', tokenError);
+        } catch (magicError) {
+          console.error('Error checking Magic login status:', magicError);
         }
       }
     }
@@ -39,7 +55,13 @@ api.interceptors.request.use(async (config) => {
 
 // Add a response interceptor for error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // If we get a successful response from auth endpoints, mark as authenticated
+    if (response.config.url.includes('/auth/') && response.status === 200) {
+      localStorage.setItem('isAuthenticated', 'true');
+    }
+    return response;
+  },
   (error) => {
     // Add global error handling here if needed
     if (error.response) {
@@ -50,6 +72,7 @@ api.interceptors.response.use(
       if (error.response.status === 401) {
         // Could dispatch an action to logout the user if needed
         console.error('Authentication error');
+        localStorage.removeItem('isAuthenticated');
       }
     } else if (error.request) {
       // The request was made but no response was received

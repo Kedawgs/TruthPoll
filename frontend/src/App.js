@@ -17,6 +17,7 @@ import Terms from './pages/Terms';
 import NotFound from './pages/NotFound';
 import AuthModal from './components/AuthModal';
 import UsernameModal from './components/UsernameModal';
+import AdminDashboard from './pages/AdminDashboard';
 
 // Main App Component
 function App() {
@@ -105,6 +106,7 @@ function AppContent() {
   const { 
     isConnected, 
     account,
+    isAdmin,
     logout, 
     needsUsername,
     openAuthModal 
@@ -116,6 +118,16 @@ function AppContent() {
       // Open the auth modal instead of redirecting
       openAuthModal();
       // Return null to prevent showing the protected route
+      return <Navigate to="/" />;
+    }
+    
+    return children;
+  };
+
+  // Admin route component
+  const AdminRoute = ({ children }) => {
+    if (!isAdmin) {
+      // Redirect non-admin users to home
       return <Navigate to="/" />;
     }
     
@@ -142,6 +154,19 @@ function AppContent() {
               </ProtectedRoute>
             } 
           />
+          
+          {/* Admin Route - Protected and requires admin access */}
+          <Route 
+            path="/admin/dashboard" 
+            element={
+              <ProtectedRoute>
+                <AdminRoute>
+                  <AdminDashboard />
+                </AdminRoute>
+              </ProtectedRoute>
+            } 
+          />
+          
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/magic-callback" element={<MagicRedirect />} />

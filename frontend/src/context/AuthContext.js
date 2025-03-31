@@ -20,6 +20,7 @@ export const AuthProvider = ({ children }) => {
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [chainId, setChainId] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   
   // UI state
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -32,6 +33,32 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     checkExistingAuth();
   }, []);
+  
+  // Check admin status after authentication is complete
+  const checkAdminStatus = useCallback(async () => {
+    if (!isConnected || !account) return;
+    
+    try {
+      // Use the simpler endpoint that doesn't require authentication
+      const response = await api.get(`/auth/is-address-admin/${account}`);
+      if (response.data.success) {
+        setIsAdmin(response.data.data.isAdmin);
+        logger.info(`User admin status: ${response.data.data.isAdmin}`);
+      } else {
+        setIsAdmin(false);
+      }
+    } catch (error) {
+      logger.error("Error checking admin status:", error.message);
+      setIsAdmin(false);
+    }
+  }, [isConnected, account]);
+  
+  // Run admin check when authenticated status changes
+  useEffect(() => {
+    if (isConnected && account) {
+      checkAdminStatus();
+    }
+  }, [isConnected, account, checkAdminStatus]);
   
   // Check if user is already authenticated
   const checkExistingAuth = async () => {
@@ -152,6 +179,7 @@ export const AuthProvider = ({ children }) => {
       setSigner(null);
       setIsConnected(false);
       setAuthType(null);
+      setIsAdmin(false);
     } else {
       // Account changed
       setAccount(accounts[0]);
@@ -337,6 +365,7 @@ export const AuthProvider = ({ children }) => {
       setAuthType(null);
       setProvider(null);
       setChainId(null);
+      setIsAdmin(false);
       
       // 5. Signal logout to other contexts
       window.dispatchEvent(new CustomEvent('auth:logout'));
@@ -356,9 +385,10 @@ export const AuthProvider = ({ children }) => {
       authType, 
       provider,
       signer,
-      chainId
+      chainId,
+      isAdmin
     };
-  }, [isConnected, account, authType, provider, signer, chainId]);
+  }, [isConnected, account, authType, provider, signer, chainId, isAdmin]);
   
   return (
     <AuthContext.Provider
@@ -369,6 +399,7 @@ export const AuthProvider = ({ children }) => {
         provider,
         signer,
         chainId,
+        isAdmin,
         loading,
         error,
         showAuthModal,

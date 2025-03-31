@@ -1,6 +1,7 @@
 // backend/controllers/smartWalletController.js
 const ethers = require('ethers');
 const logger = require('../utils/logger');
+const { ValidationError, AuthorizationError } = require('../utils/errorTypes');
 
 exports.getWalletAddress = async (req, res) => {
   try {
@@ -43,17 +44,19 @@ exports.deployWallet = async (req, res) => {
   try {
     const { userAddress } = req.body;
     
+    // Validate request
+    if (!userAddress || !ethers.utils.isAddress(userAddress)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid userAddress is required'
+      });
+    }
+    
     // Get the service from app.locals
     const smartWalletService = req.app.locals.smartWalletService;
     
-    // Verify the user is authenticated
-    const { isMagicUser } = req.user || {};
-    if (isMagicUser && req.user.publicAddress.toLowerCase() !== userAddress.toLowerCase()) {
-      return res.status(403).json({
-        success: false,
-        error: 'Unauthorized address'
-      });
-    }
+    // NOTE: Address verification happens in the middleware
+    // We could add extra checks here for non-Magic users
     
     // Deploy the wallet
     const walletAddress = await smartWalletService.deployWalletIfNeeded(userAddress);

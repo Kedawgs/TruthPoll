@@ -1,6 +1,8 @@
+// backend/routes/smartWalletRoutes.js
 const express = require('express');
 const router = express.Router();
 const { getWalletAddress, deployWallet } = require('../controllers/smartWalletController');
+const { isAuthenticated, verifyMagicAddress } = require('../middleware/authMiddleware');
 
 // Get wallet address
 router.route('/:address')
@@ -8,6 +10,6 @@ router.route('/:address')
 
 // Deploy wallet
 router.route('/')
-  .post(deployWallet);
+  .post(isAuthenticated, verifyMagicAddress('userAddress'), deployWallet);
 
 module.exports = router;

@@ -2,6 +2,9 @@
 const express = require('express');
 const router = express.Router();
 
+// Import middlewares
+const { isAuthenticated, verifyMagicAddress } = require('../middleware/authMiddleware');
+
 // Import the controller
 const {
   createPoll,
@@ -19,7 +22,7 @@ const {
 // Basic routes
 router.route('/')
   .get(getPolls)
-  .post(createPoll);
+  .post(isAuthenticated, verifyMagicAddress('creator'), createPoll);
 
 router.route('/search')
   .get(searchPolls);
@@ -31,10 +34,10 @@ router.route('/:id/vote')
   .post(votePoll);
 
 router.route('/:id/end')
-  .put(endPoll);
+  .put(isAuthenticated, endPoll);
 
 router.route('/:id/reactivate')
-  .put(reactivatePoll);
+  .put(isAuthenticated, reactivatePoll);
 
 router.route('/claim-reward')
   .post(claimReward);

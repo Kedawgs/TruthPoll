@@ -27,6 +27,7 @@ export const useAppContext = () => {
     provider: auth.provider,
     signer: auth.signer,
     chainId: auth.chainId,
+    isAdmin: auth.isAdmin,
     authLoading: auth.loading,
     authError: auth.error,
     showAuthModal: auth.showAuthModal,

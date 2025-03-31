@@ -1,3 +1,4 @@
+// backend/routes/contractRoutes.js
 const express = require('express');
 const {
   deployFactory,
@@ -5,20 +6,26 @@ const {
   getAllPolls,
   getPollDetails
 } = require('../controllers/contractController');
+const { isAuthenticated } = require('../middleware/authMiddleware');
+const { isAdmin } = require('../middleware/adminMiddleware');
 
 const router = express.Router();
 
-// Contract routes
-router.route('/deploy-factory')
-  .post(deployFactory);  // Deploy the factory contract
-
+// Public routes
 router.route('/polls')
-  .get(getAllPolls);     // Get all polls from blockchain
+  .get(getAllPolls);
 
 router.route('/polls/:address')
-  .get(getPollDetails);  // Get details of a specific poll
+  .get(getPollDetails);
 
 router.route('/polls/creator/:address')
-  .get(getPollsByCreator); // Get all polls by a specific creator
+  .get(getPollsByCreator);
+
+// Admin-only routes
+// Only accessible in non-production environments AND requires admin authentication
+if (process.env.NODE_ENV !== 'production') {
+  router.route('/deploy-factory')
+    .post(isAuthenticated, isAdmin, deployFactory);
+}
 
 module.exports = router;

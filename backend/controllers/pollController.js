@@ -1,5 +1,6 @@
 // backend/controllers/pollController.js
 const { successResponse, paginatedResponse } = require('../utils/responseHandler');
+const { ValidationError, AuthorizationError, BlockchainError } = require('../utils/errorTypes');
 const logger = require('../utils/logger');
 
 /**
@@ -11,6 +12,17 @@ exports.createPoll = async (req, res, next) => {
   try {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
+    
+    // Input validation
+    if (!req.body.title || !req.body.options || !req.body.creator) {
+      return next(new ValidationError('Title, options, and creator are required fields'));
+    }
+    
+    if (!Array.isArray(req.body.options) || req.body.options.length < 2) {
+      return next(new ValidationError('At least two options are required'));
+    }
+    
+    // NOTE: Creator address verification is already done by verifyMagicAddress middleware
     
     const pollData = {
       title: req.body.title,
@@ -88,13 +100,24 @@ exports.votePoll = async (req, res, next) => {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
     
-    const voteData = {
-      optionIndex: req.body.optionIndex,
-      voterAddress: req.body.voterAddress,
-      signature: req.body.signature
-    };
+    const { optionIndex, voterAddress, signature } = req.body;
     
-    const result = await pollService.votePoll(req.params.id, voteData, req.user);
+    if (optionIndex === undefined || !voterAddress || !signature) {
+      return next(new ValidationError('Option index, voter address, and signature are required'));
+    }
+    
+    // Verify address matches for Magic users
+    if (req.user && req.user.isMagicUser) {
+      if (voterAddress.toLowerCase() !== req.user.publicAddress.toLowerCase()) {
+        return next(new AuthorizationError('Cannot vote as another address'));
+      }
+    }
+    
+    const result = await pollService.votePoll(req.params.id, {
+      optionIndex,
+      voterAddress,
+      signature
+    }, req.user);
     
     return successResponse(res, result);
   } catch (error) {
@@ -112,6 +135,16 @@ exports.endPoll = async (req, res, next) => {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
     
+    // Get poll details first to verify ownership
+    const pollData = await pollService.getPoll(req.params.id);
+    
+    // Check if the user is the poll creator
+    if (req.user && req.user.isMagicUser) {
+      if (pollData.data.creator.toLowerCase() !== req.user.publicAddress.toLowerCase()) {
+        return next(new AuthorizationError('Only the poll creator can end a poll'));
+      }
+    }
+    
     const result = await pollService.endPoll(req.params.id, req.user);
     return successResponse(res, result);
   } catch (error) {
@@ -128,6 +161,16 @@ exports.reactivatePoll = async (req, res, next) => {
   try {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
+    
+    // Get poll details first to verify ownership
+    const pollData = await pollService.getPoll(req.params.id);
+    
+    // Check if the user is the poll creator
+    if (req.user && req.user.isMagicUser) {
+      if (pollData.data.creator.toLowerCase() !== req.user.publicAddress.toLowerCase()) {
+        return next(new AuthorizationError('Only the poll creator can reactivate a poll'));
+      }
+    }
     
     const { duration = 0 } = req.body;
     
@@ -155,6 +198,10 @@ exports.claimReward = async (req, res, next) => {
     
     const { pollAddress, signature } = req.body;
     
+    if (!pollAddress || !signature) {
+      return next(new ValidationError('Poll address and signature are required'));
+    }
+    
     const result = await pollService.claimReward(
       pollAddress,
       signature,
@@ -179,6 +226,13 @@ exports.getClaimableRewards = async (req, res, next) => {
     
     const userAddress = req.params.address;
     
+    // For Magic users, verify they're only accessing their own rewards
+    if (req.user && req.user.isMagicUser) {
+      if (userAddress.toLowerCase() !== req.user.publicAddress.toLowerCase()) {
+        return next(new AuthorizationError('Can only view rewards for your own address'));
+      }
+    }
+    
     const claimableRewards = await pollService.getClaimableRewards(userAddress);
     
     return successResponse(res, claimableRewards);
@@ -198,6 +252,13 @@ exports.getUserNonce = async (req, res, next) => {
     const pollService = req.app.locals.pollService;
     
     const { pollAddress, userAddress } = req.params;
+    
+    // For Magic users, verify they're only accessing their own nonce
+    if (req.user && req.user.isMagicUser) {
+      if (userAddress.toLowerCase() !== req.user.publicAddress.toLowerCase()) {
+        return next(new AuthorizationError('Can only get nonce for your own address'));
+      }
+    }
     
     const nonceData = await pollService.getUserNonce(pollAddress, userAddress);
     

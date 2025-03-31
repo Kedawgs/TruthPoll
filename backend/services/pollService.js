@@ -361,8 +361,8 @@ class PollService {
    */
   async endPoll(pollId, user) {
     try {
-      const { isMagicUser } = user || {};
-      const userAddress = isMagicUser ? user.publicAddress : null;
+      // User must be authenticated to reach here (middleware check)
+      const { publicAddress } = user;
       
       // Get poll from database
       const poll = await Poll.findById(pollId);
@@ -375,8 +375,8 @@ class PollService {
         throw new ValidationError('Poll contract not deployed');
       }
       
-      // Verify poll creator for Magic users
-      if (isMagicUser && poll.creator.toLowerCase() !== userAddress.toLowerCase()) {
+      // SECURITY FIX: Verify poll creator
+      if (poll.creator.toLowerCase() !== publicAddress.toLowerCase()) {
         throw new AuthorizationError('Only the poll creator can end a poll');
       }
       
@@ -387,7 +387,7 @@ class PollService {
       poll.isActive = false;
       await poll.save();
       
-      logger.info(`Poll ${pollId} ended by ${userAddress || 'unknown user'}`);
+      logger.info(`Poll ${pollId} ended by ${publicAddress}`);
       
       return result;
     } catch (error) {
@@ -402,7 +402,7 @@ class PollService {
       throw new BlockchainError('Failed to end poll', error);
     }
   }
-  
+
   /**
    * Reactivate a poll
    * @param {String} pollId - Poll ID
@@ -412,8 +412,8 @@ class PollService {
    */
   async reactivatePoll(pollId, duration = 0, user) {
     try {
-      const { isMagicUser } = user || {};
-      const userAddress = isMagicUser ? user.publicAddress : null;
+      // User must be authenticated to reach here (middleware check)
+      const { publicAddress } = user;
       
       // Get poll from database
       const poll = await Poll.findById(pollId);
@@ -426,8 +426,8 @@ class PollService {
         throw new ValidationError('Poll contract not deployed');
       }
       
-      // Verify poll creator for Magic users
-      if (isMagicUser && poll.creator.toLowerCase() !== userAddress.toLowerCase()) {
+      // SECURITY FIX: Verify poll creator
+      if (poll.creator.toLowerCase() !== publicAddress.toLowerCase()) {
         throw new AuthorizationError('Only the poll creator can reactivate a poll');
       }
       
@@ -445,7 +445,7 @@ class PollService {
       }
       await poll.save();
       
-      logger.info(`Poll ${pollId} reactivated by ${userAddress || 'unknown user'}`);
+      logger.info(`Poll ${pollId} reactivated by ${publicAddress}`);
       
       return result;
     } catch (error) {
