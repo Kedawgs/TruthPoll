@@ -152,7 +152,8 @@ const initializeApp = async () => {
         app.use('/api/auth', require('./routes/authRoutes'));
         app.use('/api/smart-wallets', require('./routes/smartWalletRoutes'));
         app.use('/api/users', require('./routes/userRoutes'));
-
+        // In app.js where you're mounting API routes
+        app.use('/api/config', require('./routes/configRoutes'));
         // Basic health check route
         app.get('/', (req, res) => {
             res.send('TruthPoll API is running');

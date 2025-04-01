@@ -1,8 +1,8 @@
-// src/hooks/useAppContext.js
-
+// frontend/src/hooks/useAppContext.js
 import { useContext } from 'react';
 import { 
   AuthContext,
+  ConfigContext, // Add this import
   WalletContext,
   ContractContext,
   UserProfileContext
@@ -14,6 +14,7 @@ import {
  */
 export const useAppContext = () => {
   const auth = useContext(AuthContext);
+  const config = useContext(ConfigContext); // Add this line
   const wallet = useContext(WalletContext);
   const contract = useContext(ContractContext);
   const userProfile = useContext(UserProfileContext);
@@ -36,6 +37,13 @@ export const useAppContext = () => {
     connectWallet: auth.connectWallet,
     loginWithMagic: auth.loginWithMagic,
     logout: auth.logout,
+    
+    // Config context - Add these lines
+    config: config.config,
+    configLoading: config.loading,
+    configError: config.error,
+    getConfigValue: config.getConfigValue,
+    refreshConfig: config.refreshConfig,
     
     // Wallet context
     smartWalletAddress: wallet.smartWalletAddress,

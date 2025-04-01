@@ -72,10 +72,18 @@ export async function signTokenApproval(provider, tokenAddress, spenderAddress, 
  */
 export async function requestWalletDeployment(userAddress, provider) {
   try {
+    // Check authentication status first
+    const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+    const authToken = localStorage.getItem('authToken');
+    
+    if (!isAuthenticated || !authToken) {
+      throw new Error("Authentication required. Please connect your wallet or sign in first.");
+    }
+    
     // Normalize address
     const normalizedAddress = userAddress.toLowerCase();
     
-    // For web3 wallet users, get a signature
+    // Rest of the function remains the same...
     let signature = null;
     
     if (provider) {

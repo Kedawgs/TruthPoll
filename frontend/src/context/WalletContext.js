@@ -10,7 +10,7 @@ import { requestWalletDeployment } from '../utils/web3Helper';
 export const WalletContext = createContext();
 
 export const WalletProvider = ({ children }) => {
-  const { isConnected, account, authType, provider, signer } = useContext(AuthContext);
+  const { isConnected, account, authType, provider, signer, openAuthModal } = useContext(AuthContext);
   
   // Smart wallet state
   const [smartWalletAddress, setSmartWalletAddress] = useState(null);
@@ -18,6 +18,7 @@ export const WalletProvider = ({ children }) => {
   const [isSmartWalletDeployed, setIsSmartWalletDeployed] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState(null);
+  const [walletData, setWalletData] = useState(null); // Store complete wallet data
   
   // USDT token address
   const [usdtAddress] = useState(process.env.REACT_APP_USDT_ADDRESS);
@@ -32,6 +33,7 @@ export const WalletProvider = ({ children }) => {
       setUsdtBalance("0.00");
       setWalletLoading(false);
       setWalletError(null);
+      setWalletData(null);
     };
     
     window.addEventListener('auth:logout', handleLogout);
@@ -40,6 +42,25 @@ export const WalletProvider = ({ children }) => {
       window.removeEventListener('auth:logout', handleLogout);
     };
   }, []);
+  
+  // Listen for wallet authentication required events
+  useEffect(() => {
+    const handleWalletAuthRequired = () => {
+      logger.info("Authentication required for wallet operations");
+      // Reset error state and prompt for authentication
+      setWalletError("Authentication required. Please sign in first.");
+      // If we have access to the auth modal, open it
+      if (openAuthModal) {
+        openAuthModal();
+      }
+    };
+    
+    window.addEventListener('wallet:auth:required', handleWalletAuthRequired);
+    
+    return () => {
+      window.removeEventListener('wallet:auth:required', handleWalletAuthRequired);
+    };
+  }, [openAuthModal]);
   
   // Load smart wallet data when auth state changes
   useEffect(() => {
@@ -55,10 +76,11 @@ export const WalletProvider = ({ children }) => {
       // Reset wallet state when disconnected
       setSmartWalletAddress(null);
       setIsSmartWalletDeployed(false);
+      setWalletData(null);
     }
   }, [isConnected, account, authType]);
   
-  // Get smart wallet address from the backend
+  // Get smart wallet address from the backend - optimized to store complete data
   const getSmartWalletAddress = async (userAddress) => {
     try {
       setWalletLoading(true);
@@ -71,11 +93,17 @@ export const WalletProvider = ({ children }) => {
       const response = await api.get(`/smart-wallets/${userAddress}`);
       
       if (response.data.success) {
-        setSmartWalletAddress(response.data.data.address);
-        setIsSmartWalletDeployed(response.data.data.isDeployed);
-        logger.info("Smart wallet address:", response.data.data.address);
+        // Store complete wallet data
+        const walletData = response.data.data;
+        setWalletData(walletData);
+        
+        // Update individual state variables for backward compatibility
+        setSmartWalletAddress(walletData.address);
+        setIsSmartWalletDeployed(walletData.isDeployed);
+        
+        logger.info("Smart wallet data retrieved:", walletData);
         setWalletLoading(false);
-        return response.data.data.address;
+        return walletData.address;
       }
       setWalletLoading(false);
       return null;
@@ -87,7 +115,7 @@ export const WalletProvider = ({ children }) => {
     }
   };
   
-  // Deploy smart wallet if needed - IMPROVED with signature validation
+  // Deploy smart wallet if needed - IMPROVED to use stored wallet data
   const deploySmartWalletIfNeeded = async () => {
     try {
       setWalletLoading(true);
@@ -99,30 +127,44 @@ export const WalletProvider = ({ children }) => {
         return null;
       }
       
-      // Check if wallet already exists
-      let walletAddress = smartWalletAddress;
-      let needsDeployment = false;
-      
-      if (!walletAddress) {
-        // First try to get the address
-        walletAddress = await getSmartWalletAddress(account);
+      // Check authentication status using only isConnected from AuthContext
+      if (!isConnected) {
+        logger.warn("Authentication required for wallet deployment");
+        setWalletError("Authentication required. Please sign in first.");
+        // Dispatch event for components to respond to
+        window.dispatchEvent(new CustomEvent('wallet:auth:required'));
+        setWalletLoading(false);
+        // If we have access to the auth modal, open it
+        if (openAuthModal) {
+          openAuthModal();
+        }
+        throw new Error("Authentication required. Please sign in first.");
       }
       
-      // If we have an address, check if it's deployed
-      if (walletAddress) {
-        // Check if it's deployed
-        const response = await api.get(`/smart-wallets/${account}`);
-        
-        if (response.data.success && !response.data.data.isDeployed) {
-          // Address exists but not deployed
+      // Use stored wallet data if available, or fetch it if not
+      let currentWalletData = walletData;
+      if (!currentWalletData) {
+        // Fetch wallet data if not already available
+        await getSmartWalletAddress(account);
+        currentWalletData = walletData;
+      }
+      
+      // Determine if deployment is needed
+      let needsDeployment = false;
+      let walletAddress = null;
+      
+      if (currentWalletData) {
+        walletAddress = currentWalletData.address;
+        // Check if it's not yet deployed
+        if (!currentWalletData.isDeployed) {
           needsDeployment = true;
-        } else if (response.data.success) {
-          // Already deployed
+        } else {
+          // Already deployed, return address
           setWalletLoading(false);
           return walletAddress;
         }
       } else {
-        // We don't have an address, request creation
+        // No wallet data found, need to create a new wallet
         needsDeployment = true;
       }
       
@@ -134,6 +176,13 @@ export const WalletProvider = ({ children }) => {
           const result = await requestWalletDeployment(account, window.ethereum);
           
           if (result.success) {
+            // Update state with new wallet data
+            const newWalletData = {
+              address: result.data.address,
+              isDeployed: true
+            };
+            
+            setWalletData(newWalletData);
             setSmartWalletAddress(result.data.address);
             setIsSmartWalletDeployed(true);
             setWalletLoading(false);
@@ -142,8 +191,19 @@ export const WalletProvider = ({ children }) => {
             throw new Error(result.error || 'Deployment failed');
           }
         } catch (deployError) {
-          logger.error("Smart wallet deployment error:", deployError);
-          setWalletError('Failed to deploy smart wallet: ' + (deployError.message || 'Unknown error'));
+          // Check for auth-related errors
+          if (deployError.message.includes("Authentication required") || 
+              (deployError.response && deployError.response.status === 401)) {
+            logger.error("Authentication error during wallet deployment:", deployError);
+            setWalletError('Authentication required. Please sign in first.');
+            // If we have access to the auth modal, open it
+            if (openAuthModal) {
+              openAuthModal();
+            }
+          } else {
+            logger.error("Smart wallet deployment error:", deployError);
+            setWalletError('Failed to deploy smart wallet: ' + (deployError.message || 'Unknown error'));
+          }
           setWalletLoading(false);
           throw deployError;
         }
@@ -298,6 +358,7 @@ export const WalletProvider = ({ children }) => {
         isSmartWalletDeployed,
         walletLoading,
         walletError,
+        walletData, // Expose complete wallet data
         getSmartWalletAddress,
         deploySmartWalletIfNeeded,
         getUSDTBalance,

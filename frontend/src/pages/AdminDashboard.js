@@ -1,6 +1,6 @@
 // frontend/src/pages/AdminDashboard.js
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
 import api from '../utils/api';
 
@@ -94,6 +94,13 @@ const AdminDashboard = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Admin Function Cards */}
             <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer">
+              <Link to="/admin/config" className="block">
+                <h3 className="font-medium text-gray-900 mb-2">Configuration Management</h3>
+                <p className="text-sm text-gray-500">Manage application configuration values and settings.</p>
+              </Link>
+            </div>
+            
+            <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer">
               <h3 className="font-medium text-gray-900 mb-2">Deploy Factory Contract</h3>
               <p className="text-sm text-gray-500">Deploy or update the poll factory contract.</p>
             </div>
@@ -106,6 +113,16 @@ const AdminDashboard = () => {
             <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer">
               <h3 className="font-medium text-gray-900 mb-2">User Management</h3>
               <p className="text-sm text-gray-500">View and manage user accounts.</p>
+            </div>
+            
+            <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer">
+              <h3 className="font-medium text-gray-900 mb-2">Poll Moderation</h3>
+              <p className="text-sm text-gray-500">Moderate and manage existing polls.</p>
+            </div>
+            
+            <div className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer">
+              <h3 className="font-medium text-gray-900 mb-2">System Logs</h3>
+              <p className="text-sm text-gray-500">View application logs and diagnostics.</p>
             </div>
           </div>
         </div>

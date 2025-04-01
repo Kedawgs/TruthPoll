@@ -18,6 +18,7 @@ import NotFound from './pages/NotFound';
 import AuthModal from './components/AuthModal';
 import UsernameModal from './components/UsernameModal';
 import AdminDashboard from './pages/AdminDashboard';
+import AdminConfig from './pages/AdminConfig'; // Import the new component
 
 // Main App Component
 function App() {
@@ -155,13 +156,25 @@ function AppContent() {
             } 
           />
           
-          {/* Admin Route - Protected and requires admin access */}
+          {/* Admin Routes - Protected and requires admin access */}
           <Route 
             path="/admin/dashboard" 
             element={
               <ProtectedRoute>
                 <AdminRoute>
                   <AdminDashboard />
+                </AdminRoute>
+              </ProtectedRoute>
+            } 
+          />
+          
+          {/* New Admin Config Route */}
+          <Route 
+            path="/admin/config" 
+            element={
+              <ProtectedRoute>
+                <AdminRoute>
+                  <AdminConfig />
                 </AdminRoute>
               </ProtectedRoute>
             } 

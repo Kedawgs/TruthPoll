@@ -38,6 +38,11 @@ const Navbar = () => {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'active', or 'ended'
+
+  // Debug log when component renders
+  useEffect(() => {
+    console.log("Navbar rendered, isAdmin status:", isAdmin);
+  }, [isAdmin]);
   
   // Handle mouse enter on hamburger menu
   const handleMenuMouseEnter = () => {
@@ -204,6 +209,7 @@ const Navbar = () => {
   
   // Toggle profile dropdown
   const toggleProfileDropdown = () => {
+    console.log("Toggling dropdown, isAdmin status:", isAdmin);
     setShowProfileDropdown(!showProfileDropdown);
   };
   
@@ -556,6 +562,9 @@ const Navbar = () => {
                   {/* Profile Dropdown */}
                   {showProfileDropdown && (
                     <div className="profile-dropdown">
+                      {/* Debug log */}
+                      {console.log("Rendering dropdown, isAdmin:", isAdmin)}
+                      
                       <div className="dropdown-header">
                         <div className="dropdown-address">
                           {userProfile?.username || formatAddress(account)}
@@ -605,8 +614,8 @@ const Navbar = () => {
                         Rewards
                       </Link>
 
-                      {/* Admin section - only shown for admin users */}
-                      {isAdmin && (
+                      {/* Admin section - Force boolean comparison */}
+                      {isAdmin === true && (
                         <>
                           <div className="dropdown-divider"></div>
                           <div className="dropdown-header">
@@ -642,6 +651,26 @@ const Navbar = () => {
                               <line x1="9" y1="21" x2="9" y2="9"></line>
                             </svg>
                             Admin Dashboard
+                          </Link>
+                          <Link
+                            to="/admin/config"
+                            className="dropdown-item"
+                            onClick={() => setShowProfileDropdown(false)}
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M12 20v-6M6 20V10M18 20V4"></path>
+                            </svg>
+                            Configuration
                           </Link>
                         </>
                       )}
