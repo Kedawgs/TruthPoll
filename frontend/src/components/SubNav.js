@@ -10,7 +10,6 @@ const SubNav = ({ onTabChange, nonClickableItems = [] }) => {
   const navItems = [
     { id: 'live', label: 'Live', hasIndicator: true, tooltip: 'Website status monitor' },
     { id: 'all', label: 'All', tooltip: 'View all polls' },
-    { id: 'new', label: 'New', tooltip: 'Recently created polls' },
     { id: 'completed', label: 'Completed', tooltip: 'Polls that have ended' },
     { id: 'reward', label: 'Reward', tooltip: 'Polls offering rewards' },
     { id: 'age', label: 'Age', tooltip: 'Age-based polls' },
@@ -19,7 +18,8 @@ const SubNav = ({ onTabChange, nonClickableItems = [] }) => {
     { id: 'income', label: 'Income', tooltip: 'Income-based polls' },
     { id: 'pet-owner', label: 'Pet Owner', tooltip: 'Pet ownership polls' },
     { id: 'relationship', label: 'Relationship', tooltip: 'Relationship status polls' },
-    { id: 'education', label: 'Education', tooltip: 'Education-based polls' }
+    { id: 'education', label: 'Education', tooltip: 'Education-based polls' },
+    { id: 'politics', label: 'Politics', tooltip: 'Political polls' }
   ];
   
   const handleTabClick = (id) => {
@@ -52,10 +52,10 @@ const SubNav = ({ onTabChange, nonClickableItems = [] }) => {
             title={item.tooltip}
           >
             <div className="subnav-item-content">
+              <span>{item.label}</span>
               {item.hasIndicator && (
                 <span className="live-indicator"></span>
               )}
-              <span>{item.label}</span>
             </div>
             {activeTab === item.id && !nonClickableItems.includes(item.id) && (
               <div className="active-indicator"></div>

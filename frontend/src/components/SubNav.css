@@ -34,10 +34,10 @@
     background: none;
     border: none;
     cursor: pointer;
-    transition: color 0.2s;
+    transition: none;
   }
   
-  .subnav-item:hover {
+  .subnav-item:hover:not(.non-clickable) {
     color: #374151; /* text-gray-700 */
   }
   
@@ -48,6 +48,8 @@
   .subnav-item-content {
     display: flex;
     align-items: center;
+    gap: 6px;
+    font-weight: 600; /* Makes the label slightly bolder */
   }
   
   .live-indicator {

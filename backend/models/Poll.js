@@ -8,6 +8,9 @@ const PollSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Title cannot be more than 100 characters']
   },
+  image: {
+    type: String
+  },
   description: {
     type: String,
     maxlength: [500, 'Description cannot be more than 500 characters']
