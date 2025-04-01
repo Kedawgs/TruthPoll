@@ -1,9 +1,11 @@
 // SubNav.js
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './SubNav.css';
 
 const SubNav = ({ onTabChange, nonClickableItems = [] }) => {
   const [activeTab, setActiveTab] = useState('all');
+  const navigate = useNavigate();
   
   const navItems = [
     { id: 'live', label: 'Live', hasIndicator: true, tooltip: 'Website status monitor' },
@@ -26,9 +28,14 @@ const SubNav = ({ onTabChange, nonClickableItems = [] }) => {
     }
     
     setActiveTab(id);
+    
+    // Call the onTabChange callback if provided
     if (onTabChange) {
       onTabChange(id);
     }
+    
+    // Navigate to the corresponding URL
+    navigate(`/polls/${id}`);
   };
   
   return (

@@ -1,11 +1,18 @@
 // src/pages/PollsList.js
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
 import PollCard from '../components/PollCard';
 
 const PollsList = () => {
   const { getPolls, pollLoading } = useAppContext();
+  const { filter } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Extract search query from URL if present
+  const searchParams = new URLSearchParams(location.search);
+  const urlSearchQuery = searchParams.get('search') || '';
   
   // Component state
   const [polls, setPolls] = useState([]);
@@ -13,7 +20,7 @@ const PollsList = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [category, setCategory] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(urlSearchQuery);
   const [activeOnly, setActiveOnly] = useState(false);
   
   // Categories list
@@ -27,9 +34,60 @@ const PollsList = () => {
     { id: 'Other', name: 'Other' }
   ];
   
+  // Process filter parameter to determine what polls to fetch
+  useEffect(() => {
+    if (filter) {
+      switch (filter) {
+        case 'all':
+          setActiveOnly(false);
+          setCategory('');
+          break;
+        case 'new':
+          // For new polls, we'll keep the category but sort by creation date
+          setActiveOnly(true);
+          break;
+        case 'completed':
+          setActiveOnly(false);
+          // Set to fetch only completed polls
+          setCategory('');
+          // We'll handle this in the fetchPolls function
+          break;
+        case 'reward':
+          // For reward polls, we'll need a special parameter
+          setActiveOnly(true);
+          // We'll handle this in the fetchPolls function
+          break;
+        // Handle demographic-based filters
+        case 'age':
+        case 'gender':
+        case 'race':
+        case 'income':
+        case 'pet-owner':
+        case 'relationship':
+        case 'education':
+          // Set the category to match the filter
+          setCategory(filter.charAt(0).toUpperCase() + filter.slice(1));
+          break;
+        default:
+          // Default behavior keeps current filter settings
+          break;
+      }
+      
+      // Reset to page 1 when changing filters
+      setPage(1);
+    }
+  }, [filter]);
+  
+  // Run search from URL params on initial load
+  useEffect(() => {
+    if (urlSearchQuery) {
+      handleSearch({ preventDefault: () => {} });
+    }
+  }, []);
+  
   useEffect(() => {
     fetchPolls();
-  }, [page, category, activeOnly]);
+  }, [page, category, activeOnly, filter]);
   
   const fetchPolls = async () => {
     try {
@@ -48,6 +106,26 @@ const PollsList = () => {
       
       if (activeOnly) {
         params.active = true;
+      }
+      
+      // Handle special filter cases
+      if (filter) {
+        switch (filter) {
+          case 'completed':
+            params.active = false;
+            break;
+          case 'reward':
+            params.hasRewards = true;
+            break;
+          case 'new':
+            // Sort by creation date descending (most recent first)
+            params.sortBy = 'createdAt';
+            params.sortOrder = 'desc';
+            break;
+          default:
+            // No special parameters for other filters
+            break;
+        }
       }
       
       const result = await getPolls(params);
@@ -82,6 +160,11 @@ const PollsList = () => {
       const result = await getPolls(params);
       setPolls(result.data);
       
+      // Update URL without reloading the page
+      const searchParams = new URLSearchParams();
+      searchParams.set('search', searchQuery);
+      navigate(`/polls?${searchParams.toString()}`);
+      
       setLoading(false);
     } catch (error) {
       console.error('Error searching polls:', error);
@@ -101,9 +184,31 @@ const PollsList = () => {
     }
   };
   
+  // Get title based on filter
+  const getPageTitle = () => {
+    if (searchQuery) return `Search Results: ${searchQuery}`;
+    
+    if (!filter) return 'Browse Polls';
+    
+    switch (filter) {
+      case 'all': return 'All Polls';
+      case 'new': return 'New Polls';
+      case 'completed': return 'Completed Polls';
+      case 'reward': return 'Polls with Rewards';
+      case 'age': return 'Age-Related Polls';
+      case 'gender': return 'Gender-Related Polls';
+      case 'race': return 'Race-Related Polls';
+      case 'income': return 'Income-Related Polls';
+      case 'pet-owner': return 'Pet Owner Polls';
+      case 'relationship': return 'Relationship Polls';
+      case 'education': return 'Education Polls';
+      default: return `${filter.charAt(0).toUpperCase() + filter.slice(1)} Polls`;
+    }
+  };
+  
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-      <h1 className="text-3xl font-bold mb-8">Browse Polls</h1>
+      <h1 className="text-3xl font-bold mb-8">{getPageTitle()}</h1>
       
       {/* Filters and Search */}
       <div className="bg-white p-4 rounded-lg shadow mb-8">

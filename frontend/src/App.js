@@ -135,11 +135,12 @@ function AppContent() {
         nonClickableItems={['live']} 
       />
       
-      <main className="container mx-auto px-4 py-8 flex-grow">
+      <main className="container mx-auto px-4 py-8 flex-grow" style={{ marginTop: '114px' }}> {/* 56px navbar + 58px subnav */}
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/polls" element={<PollsList />} />
-          <Route path="/polls/:id" element={<PollDetail />} />
+          <Route path="/polls/:filter" element={<PollsList />} />
+          <Route path="/polls/id/:id" element={<PollDetail />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/activity" element={<Activity />} />
           <Route 

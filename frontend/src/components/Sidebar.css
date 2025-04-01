@@ -1,9 +1,9 @@
 /* src/components/Sidebar.css */
-.sidebar-container {
+  .sidebar-container {
     position: fixed;
-    top: 65px; /* Position below the navbar (navbar height is 56px) */
+    top: 70px; /* Position below the navbar (56px) and subnav (~58px) plus some space */
     right: 15px; /* Add space from the right edge */
-    z-index: 1000;
+    z-index: 1001; /* Below navbar and subnav */
     display: flex;
   }
   

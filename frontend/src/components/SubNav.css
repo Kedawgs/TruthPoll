@@ -5,6 +5,10 @@
     border-bottom: 1px solid #e5e7eb; /* gray-200 */
     background-color: white;
     box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* subtle shadow */
+    position: fixed;
+    top: 56px; /* Position right below the navbar */
+    left: 0;
+    z-index: 999; /* Slightly lower than navbar */
   }
   
   .subnav-scroll-container {
