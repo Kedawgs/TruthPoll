@@ -20,6 +20,14 @@ const magicAuth = async (req, res, next) => {
     
     const didToken = authHeader.substring(7);
     
+    // Check if this looks like a Magic token (basic heuristic)
+    const isMagicToken = didToken.includes('.magic.');
+    
+    if (!isMagicToken) {
+      // Not a Magic token, continue to next middleware
+      return next();
+    }
+    
     // Validate the token
     try {
       magic.token.validate(didToken);
@@ -41,7 +49,7 @@ const magicAuth = async (req, res, next) => {
       };
       
     } catch (error) {
-      console.error('Invalid DID token:', error);
+      console.error('Invalid Magic DID token:', error);
       // Do not block the request if token is invalid
       // Just don't attach the user object
     }
