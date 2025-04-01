@@ -28,7 +28,6 @@ const CreatePoll = () => {
   const {
     createPoll, isConnected, openAuthModal,
     pollLoading, pollError
-    // deploySmartWalletIfNeeded, // Uncomment if needed
   } = useAppContext();
 
   // --- State ---
@@ -42,6 +41,7 @@ const CreatePoll = () => {
   const [previewVotes, setPreviewVotes] = useState(0);
   const [previewVotePercentage, setPreviewVotePercentage] = useState(0);
   const [duration] = useState('0'); // Default duration (no UI)
+  const [pollCreationSuccess, setPollCreationSuccess] = useState(false);
 
   // --- Memoized derived state ---
   const isRewardEnabled = useMemo(() => rewardPerVoter && parseFloat(rewardPerVoter) > 0, [rewardPerVoter]);
@@ -53,38 +53,149 @@ const CreatePoll = () => {
     const currentVoteLimit = voteLimit ? parseInt(voteLimit) : 0;
     if (currentVoteLimit > 0) {
       const randomVotes = Math.floor(Math.random() * (currentVoteLimit + 1));
-      setPreviewVotes(randomVotes); setPreviewVotePercentage((randomVotes / currentVoteLimit) * 100);
-    } else { setPreviewVotes(0); setPreviewVotePercentage(0); }
+      setPreviewVotes(randomVotes); 
+      setPreviewVotePercentage((randomVotes / currentVoteLimit) * 100);
+    } else { 
+      setPreviewVotes(0); 
+      setPreviewVotePercentage(0); 
+    }
   }, [voteLimit]);
 
-  // --- Event Handlers ---
+  // --- Event Handlers (Improved) ---
   const addOption = () => setOptions([...options, '']);
-  const removeOption = (index) => { if (options.length <= 2) { setFormError('Poll must have at least two options.'); return; }; const newOptions = [...options]; newOptions.splice(index, 1); setOptions(newOptions); if (formError === 'At least two valid options are required') setFormError(''); };
-  const handleOptionChange = (index, value) => { const newOptions = [...options]; newOptions[index] = value; setOptions(newOptions); };
-  const handleAddTag = (tagToAdd) => { if (canAddMoreTags && !selectedTags.includes(tagToAdd)) { setSelectedTags([...selectedTags, tagToAdd]); if (formError.includes('maximum of')) setFormError(''); } else if (!canAddMoreTags && !selectedTags.includes(tagToAdd)) { setFormError(`You can select a maximum of ${MAX_SELECTED_TAGS} tags.`); } };
-  const handleRemoveTag = (tagToRemove) => { setSelectedTags(selectedTags.filter(tag => tag !== tagToRemove)); if (formError.includes('maximum of')) setFormError(''); };
+  
+  const removeOption = (index) => { 
+    if (options.length <= 2) { 
+      setFormError('Poll must have at least two options.');
+      return; 
+    } // Fixed: Removed extra semicolon
+    const newOptions = [...options]; 
+    newOptions.splice(index, 1); 
+    setOptions(newOptions); 
+    // Clear error immediately when conditions are fixed
+    setFormError('');
+  };
+  
+  const handleOptionChange = (index, value) => { 
+    const newOptions = [...options]; 
+    newOptions[index] = value; 
+    setOptions(newOptions);
+    // Clear error if we now have enough valid options
+    if (formError === 'At least two valid options are required.' && 
+        newOptions.filter(opt => opt.trim()).length >= 2) {
+      setFormError('');
+    }
+  };
+  
+  const handleAddTag = (tagToAdd) => {
+    // Clear any previous tag-related errors
+    if (formError && formError.includes('tags')) {
+      setFormError('');
+    }
 
-  // --- Form Validation ---
+    if (selectedTags.includes(tagToAdd)) {
+      // Tag already selected, remove it
+      handleRemoveTag(tagToAdd);
+      return;
+    }
+    
+    if (selectedTags.length >= MAX_SELECTED_TAGS) {
+      setFormError(`You can select a maximum of ${MAX_SELECTED_TAGS} tags.`);
+      return;
+    }
+    
+    // Add the tag
+    setSelectedTags([...selectedTags, tagToAdd]);
+  };
+  
+  const handleRemoveTag = (tagToRemove) => {
+    setSelectedTags(selectedTags.filter(tag => tag !== tagToRemove));
+    // Clear any tag-related errors
+    if (formError && formError.includes('tags')) {
+      setFormError('');
+    }
+  };
+
+  // --- Form Validation (Improved) ---
   const validateForm = () => {
     if (!title.trim()) return 'Poll Title is required.';
-    if (validOptions.length < 2) return 'At least two valid options are required.';
-    if (!voteLimit || parseInt(voteLimit) <= 0) return 'Max Votes is required and must be a positive number.';
-    if (rewardPerVoter && parseFloat(rewardPerVoter) < 0) return 'Reward per voter cannot be negative.';
+    
+    // Check for minimum option count and empty options
+    const filteredOptions = options.filter(option => option.trim().length > 0);
+    if (filteredOptions.length < 2) return 'At least two valid options are required.';
+    
+    // Validate max votes/vote limit
+    if (!voteLimit) return 'Max Votes is required.';
+    const voteLimitNum = parseInt(voteLimit);
+    if (isNaN(voteLimitNum) || voteLimitNum <= 0) return 'Max Votes must be a positive number.';
+    
+    // Validate reward format if present
+    if (rewardPerVoter) {
+      const rewardNum = parseFloat(rewardPerVoter);
+      if (isNaN(rewardNum)) return 'Reward per voter must be a valid number.';
+      if (rewardNum < 0) return 'Reward per voter cannot be negative.';
+    }
+    
+    // Check authentication
     if (!isConnected) return 'Please connect your wallet first.';
+    
     return '';
   };
 
-  // --- Form Submission ---
+  // --- Form Submission (Improved) ---
   const handleSubmit = async (e) => {
-    e.preventDefault(); setFormError('');
+    e.preventDefault();
+    setFormError('');
+    setPollCreationSuccess(false);
+    
     const validationError = validateForm();
-    if (validationError) { setFormError(validationError); return; }
+    if (validationError) {
+      setFormError(validationError);
+      // Scroll to the top where the error is displayed
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    
     try {
-       const pollData = { title: title.trim(), description: description.trim(), options: validOptions, duration: parseInt(duration), tags: selectedTags, rewardEnabled: isRewardEnabled, rewardPerVoter: isRewardEnabled ? rewardPerVoter : '0', voteLimit: parseInt(voteLimit), };
-       console.log("Submitting Poll Data:", pollData); const response = await createPoll(pollData);
-       if (response?.data?.poll?._id) { navigate(`/polls/${response.data.poll._id}`); }
-       else { console.warn("Poll ID missing:", response); setFormError("Poll created, but couldn't redirect."); }
-    } catch (err) { console.error('Error creating poll:', err); setFormError(err?.response?.data?.message || err.message || 'An unexpected error occurred.'); }
+      // Filter out empty options and create poll data
+      const validOptions = options.filter(option => option.trim().length > 0);
+      
+      const pollData = {
+        title: title.trim(),
+        description: description.trim(),
+        options: validOptions,
+        duration: parseInt(duration || '0'),
+        tags: selectedTags,
+        category: 'General', // You may want to add a category selector
+        rewardPerVoter: isRewardEnabled ? rewardPerVoter : '0',
+        voteLimit: parseInt(voteLimit)
+      };
+      
+      console.log("Submitting Poll Data:", pollData);
+      const response = await createPoll(pollData);
+      
+      if (response?.data?.poll?._id) {
+        // Show success message briefly before redirecting
+        setPollCreationSuccess(true);
+        setTimeout(() => {
+          navigate(`/polls/${response.data.poll._id}`);
+        }, 1000);
+      } else {
+        console.warn("Poll created but response format unexpected:", response);
+        setFormError("Poll created, but couldn't redirect to the poll page. Please check your polls list.");
+      }
+    } catch (err) {
+      console.error('Error creating poll:', err);
+      // Improved error message extraction
+      const errorMsg = err?.response?.data?.error || 
+                      err?.response?.data?.message || 
+                      err.message || 
+                      'An unexpected error occurred.';
+      setFormError(errorMsg);
+      
+      // Scroll to the error message
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   // --- Render Logic ---
@@ -101,8 +212,37 @@ const CreatePoll = () => {
   // Main Create Poll Form
   return (
     <div className="max-w-7xl mx-auto my-10 px-4 sm:px-6 lg:px-8">
-      {/* Error Display */}
-      {(formError || pollError) && ( <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-400 text-red-700 rounded-md shadow-sm" role="alert"> <p className="font-semibold">Error</p> <p>{formError || pollError}</p> </div> )}
+      {/* Improved Error Display */}
+      {(formError || pollError) && (
+        <div className="sticky top-0 z-50 mb-6 p-4 bg-red-50 border-l-4 border-red-400 text-red-700 rounded-md shadow-md" role="alert">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium">{formError || pollError}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Message */}
+      {pollCreationSuccess && (
+        <div className="sticky top-0 z-50 mb-6 p-4 bg-green-50 border-l-4 border-green-400 text-green-700 rounded-md shadow-md" role="alert">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium">Poll created successfully! Redirecting...</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main 2-column grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 xl:gap-12 items-start">
@@ -113,34 +253,177 @@ const CreatePoll = () => {
 
             {/* Title & Image Icon Row */}
             <div className="flex items-start space-x-3 sm:space-x-4">
-                <div className="flex-shrink-0 mt-1"> <label htmlFor="poll-image-upload" className="cursor-pointer group block" title="Upload Poll Icon (Coming Soon)"> <span className="block w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-100 group-hover:bg-slate-200 border border-slate-300/75 flex items-center justify-center transition-colors overflow-hidden"> <ImagePlaceholderIcon /> </span> <input id="poll-image-upload" type="file" accept="image/*" className="sr-only" disabled /> </label> </div>
-                <div className="flex-grow min-w-0"> <label htmlFor="title" className="block text-sm font-bold text-gray-700 mb-1"> Poll Title <span className="text-red-500">*</span> </label> <input type="text" id="title" value={title} onChange={(e) => setTitle(e.target.value)} className="block w-full border-gray-300 rounded-lg shadow-sm py-2.5 px-3.5 focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm" placeholder="What's your question?" required aria-required="true" /> </div>
+                <div className="flex-shrink-0 mt-1"> 
+                  <label htmlFor="poll-image-upload" className="cursor-pointer group block" title="Upload Poll Icon (Coming Soon)"> 
+                    <span className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-100 group-hover:bg-slate-200 border border-slate-300/75 transition-colors overflow-hidden">
+                      <ImagePlaceholderIcon />
+                    </span>
+                    <input id="poll-image-upload" type="file" accept="image/*" className="sr-only" disabled />
+                  </label>
+                </div>
+
+                <div className="flex-grow min-w-0">
+                  <label htmlFor="title" className="block text-sm font-bold text-gray-700 mb-1">
+                    Poll Title <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      id="title"
+                      value={title}
+                      onChange={(e) => {
+                        setTitle(e.target.value);
+                        // Clear error if field was previously empty but now has content
+                        if (formError === 'Poll Title is required.' && e.target.value.trim()) {
+                          setFormError('');
+                        }
+                      }}
+                      className={`block w-full ${
+                        formError === 'Poll Title is required.' 
+                          ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
+                          : 'border-gray-300 focus:border-cyan-500 focus:ring-cyan-500'
+                      } rounded-lg shadow-sm py-2.5 px-3.5 sm:text-sm`}
+                      placeholder="What's your question?"
+                      required
+                      aria-required="true"
+                    />
+                    {formError === 'Poll Title is required.' && (
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                        <svg className="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  {formError === 'Poll Title is required.' && (
+                    <p className="mt-1 text-sm text-red-600">Please enter a poll title</p>
+                  )}
+                </div>
             </div>
 
             {/* Description */}
-            <div> <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label> <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} className="block w-full border-gray-300 rounded-lg shadow-sm py-2.5 px-3.5 focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm" rows={4} placeholder="Add context, background, or rules..."></textarea> </div>
-
-            {/* Vote Limit (Required) & Reward Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div> <label htmlFor="voteLimit" className="block text-sm font-bold text-gray-700 mb-1">Max Votes <span className="text-red-500">*</span></label> <input id="voteLimit" type="number" value={voteLimit} onChange={(e) => setVoteLimit(e.target.value)} className="block w-full border-gray-300 rounded-lg shadow-sm py-2.5 px-3.5 focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm" placeholder="e.g., 1000" min="1" required aria-required="true" /> </div>
-              <div> <label htmlFor="rewardPerVoter" className="block text-sm font-medium text-gray-700 mb-1">Reward / Vote (Optional)</label> <input id="rewardPerVoter" type="number" value={rewardPerVoter} onChange={(e) => setRewardPerVoter(e.target.value)} className="block w-full border-gray-300 rounded-lg shadow-sm py-2.5 px-3.5 focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm" placeholder="e.g., 0.01" step="any" min="0" /> </div>
+            <div> 
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label> 
+              <textarea 
+                id="description" 
+                value={description} 
+                onChange={(e) => setDescription(e.target.value)} 
+                className="block w-full border-gray-300 rounded-lg shadow-sm py-2.5 px-3.5 focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm" 
+                rows={4} 
+                placeholder="Add context, background, or rules..."
+              ></textarea> 
             </div>
 
-             {/* Tags Word Bank */}
+            {/* Vote Limit & Reward Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div> 
+                <label htmlFor="voteLimit" className="block text-sm font-bold text-gray-700 mb-1">
+                  Max Votes <span className="text-red-500">*</span>
+                </label> 
+                <div className="relative">
+                  <input 
+                    id="voteLimit" 
+                    type="number" 
+                    value={voteLimit} 
+                    onChange={(e) => {
+                      setVoteLimit(e.target.value);
+                      if (formError && formError.includes('Max Votes')) {
+                        setFormError('');
+                      }
+                    }} 
+                    className={`block w-full ${
+                      formError && formError.includes('Max Votes')
+                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
+                        : 'border-gray-300 focus:border-cyan-500 focus:ring-cyan-500'
+                    } rounded-lg shadow-sm py-2.5 px-3.5 sm:text-sm`} 
+                    placeholder="e.g., 1000" 
+                    min="1" 
+                    required 
+                    aria-required="true" 
+                  />
+                  {formError && formError.includes('Max Votes') && (
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <svg className="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+                {formError && formError.includes('Max Votes') && (
+                  <p className="mt-1 text-sm text-red-600">{formError}</p>
+                )}
+              </div>
+
+              <div> 
+                <label htmlFor="rewardPerVoter" className="block text-sm font-medium text-gray-700 mb-1">
+                  Reward / Vote (Optional)
+                </label> 
+                <div className="relative">
+                  <input 
+                    id="rewardPerVoter" 
+                    type="number" 
+                    value={rewardPerVoter} 
+                    onChange={(e) => {
+                      setRewardPerVoter(e.target.value);
+                      if (formError && formError.includes('Reward')) {
+                        setFormError('');
+                      }
+                    }} 
+                    className={`block w-full ${
+                      formError && formError.includes('Reward') 
+                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
+                        : 'border-gray-300 focus:border-cyan-500 focus:ring-cyan-500'
+                    } rounded-lg shadow-sm py-2.5 px-3.5 sm:text-sm`}
+                    placeholder="e.g., 0.01" 
+                    step="any" 
+                    min="0" 
+                  />
+                  {formError && formError.includes('Reward') && (
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <svg className="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+                {formError && formError.includes('Reward') && (
+                  <p className="mt-1 text-sm text-red-600">{formError}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Tags Word Bank - Fixed to be 2 rows high */}
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2"> Tags (Select up to {MAX_SELECTED_TAGS}) </label>
+              <label className="block text-sm font-bold text-gray-700 mb-2"> 
+                Tags (Select up to {MAX_SELECTED_TAGS}) 
+              </label>
+              
               {/* Selected Tags Area */}
               <div className="mb-3 p-3 border border-gray-200 rounded-lg bg-slate-50 min-h-[44px] flex flex-wrap gap-2 items-center">
-                  {selectedTags.length === 0 && ( <span className="text-sm text-gray-400 italic">Click tags below to add</span> )}
-                  {selectedTags.map((tag) => ( <span key={tag} className="inline-flex items-center pl-3 pr-1.5 py-1 rounded-full text-sm font-medium bg-cyan-600 text-white shadow-sm"> {tag} <button type="button" onClick={() => handleRemoveTag(tag)} className="ml-1.5 flex-shrink-0 p-0.5 text-cyan-100 hover:text-white hover:bg-cyan-700 rounded-full focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-cyan-400" aria-label={`Remove ${tag} tag`}> <RemoveIcon /> </button> </span> ))}
+                  {selectedTags.length === 0 && (
+                    <span className="text-sm text-gray-400 italic">Click tags below to add</span>
+                  )}
+                  {selectedTags.map((tag) => (
+                    <span key={tag} className="inline-flex items-center pl-3 pr-1.5 py-1 rounded-full text-sm font-medium bg-cyan-600 text-white shadow-sm">
+                      {tag}
+                      <button 
+                        type="button" 
+                        onClick={() => handleRemoveTag(tag)} 
+                        className="ml-1.5 flex-shrink-0 p-0.5 text-cyan-100 hover:text-white hover:bg-cyan-700 rounded-full focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-cyan-400" 
+                        aria-label={`Remove ${tag} tag`}
+                      >
+                        <RemoveIcon />
+                      </button>
+                    </span>
+                  ))}
               </div>
-              {/* Available Tags Area with HORIZONTAL SCROLL & vertical padding */}
-              <div className="overflow-x-auto whitespace-nowrap py-2 scrollbar-thin scrollbar-thumb-gray-300 hover:scrollbar-thumb-gray-400 scrollbar-track-gray-100 border-b border-gray-200">
+              
+              {/* Fixed Available Tags Area - 2 rows high with horizontal scroll */}
+              <div className="h-20 overflow-y-hidden overflow-x-auto py-2 flex flex-wrap content-start scrollbar-thin scrollbar-thumb-gray-300 hover:scrollbar-thumb-gray-400 scrollbar-track-gray-100 border-b border-gray-200">
                   {AVAILABLE_TAGS.map((tag) => {
                       const isSelected = selectedTags.includes(tag);
                       const isDisabled = !canAddMoreTags && !isSelected;
                       return (
-                          // Added inline-block, mr-2 and mb-2 for spacing
                           <button
                               key={tag} type="button"
                               onClick={() => isSelected ? handleRemoveTag(tag) : handleAddTag(tag)}
@@ -157,17 +440,82 @@ const CreatePoll = () => {
                       );
                   })}
               </div>
+              {formError && formError.includes('tags') && (
+                <p className="mt-1 text-sm text-red-600">{formError}</p>
+              )}
             </div>
 
             {/* Options */}
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">Options <span className="text-red-500">*</span></label>
-              <div className="space-y-3"> {options.map((option, index) => ( <div key={index} className="flex items-center space-x-2"> <input type="text" value={option} onChange={(e) => handleOptionChange(index, e.target.value)} className="block w-full border-gray-300 rounded-lg shadow-sm py-2.5 px-3.5 focus:border-cyan-500 focus:ring-cyan-500 sm:text-sm" placeholder={`Option ${index + 1}`} required={index < 2} aria-required={index < 2} /> {options.length > 2 && ( <button type="button" onClick={() => removeOption(index)} title="Remove Option" className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 focus:outline-none rounded-full hover:bg-red-100 transition-colors" aria-label={`Remove Option ${index + 1}`}> <RemoveIcon /> </button> )} </div> ))} </div>
-              <button type="button" onClick={addOption} className="mt-3 px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-700 transition-colors shadow"> + Add Option </button>
+              <label className="block text-sm font-bold text-gray-700 mb-2">
+                Options <span className="text-red-500">*</span>
+              </label>
+              <div className="space-y-3"> 
+                {options.map((option, index) => (
+                  <div key={index} className="flex items-center space-x-2"> 
+                    <input 
+                      type="text" 
+                      value={option} 
+                      onChange={(e) => handleOptionChange(index, e.target.value)} 
+                      className={`block w-full ${
+                        formError === 'At least two valid options are required.' 
+                          ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
+                          : 'border-gray-300 focus:border-cyan-500 focus:ring-cyan-500'
+                      } rounded-lg shadow-sm py-2.5 px-3.5 sm:text-sm`}
+                      placeholder={`Option ${index + 1}`} 
+                      required={index < 2} 
+                      aria-required={index < 2} 
+                    /> 
+                    {options.length > 2 && (
+                      <button 
+                        type="button" 
+                        onClick={() => removeOption(index)} 
+                        title="Remove Option" 
+                        className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 focus:outline-none rounded-full hover:bg-red-100 transition-colors" 
+                        aria-label={`Remove Option ${index + 1}`}
+                      > 
+                        <RemoveIcon /> 
+                      </button>
+                    )} 
+                  </div>
+                ))} 
+              </div>
+              {formError === 'At least two valid options are required.' && (
+                <p className="mt-1 text-sm text-red-600">Please enter at least two options</p>
+              )}
+              <button 
+                type="button" 
+                onClick={addOption} 
+                className="mt-3 px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-700 transition-colors shadow"
+              > 
+                + Add Option 
+              </button>
             </div>
 
             {/* Create Poll Button */}
-            <div className="pt-4"> <button type="submit" disabled={pollLoading} className={`w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-md text-base font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-400 transition duration-150 ease-in-out ${ pollLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-400 to-emerald-500 hover:from-cyan-500 hover:to-emerald-600 active:scale-[0.98]' }`}> {pollLoading ? ( <> {/* spinner */} Creating Poll... </> ) : ( 'Create Poll' )} </button> </div>
+            <div className="pt-4"> 
+              <button 
+                type="submit" 
+                disabled={pollLoading || pollCreationSuccess} 
+                className={`w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-md text-base font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-400 transition duration-150 ease-in-out ${ 
+                  pollLoading || pollCreationSuccess ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-400 to-emerald-500 hover:from-cyan-500 hover:to-emerald-600 active:scale-[0.98]' 
+                }`}
+              > 
+                {pollLoading ? ( 
+                  <> 
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Creating Poll... 
+                  </> 
+                ) : pollCreationSuccess ? (
+                  'Poll Created!'
+                ) : (
+                  'Create Poll'
+                )} 
+              </button> 
+            </div>
           </form>
         </div> {/* End Left Column */}
 

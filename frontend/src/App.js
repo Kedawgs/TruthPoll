@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { useAppContext } from './hooks/useAppContext';
-
+import SubNav from './components/SubNav';
 import Navbar from './components/Navbar'; 
 import Home from './pages/Home';
 import PollsList from './pages/PollsList';
@@ -18,21 +18,17 @@ import NotFound from './pages/NotFound';
 import AuthModal from './components/AuthModal';
 import UsernameModal from './components/UsernameModal';
 import AdminDashboard from './pages/AdminDashboard';
-import AdminConfig from './pages/AdminConfig'; // Import the new component
+import AdminConfig from './pages/AdminConfig';
 
-// Main App Component
 function App() {
-  // App state
   const [appSupport, setAppSupport] = useState({
     localStorage: true,
     web3: true
   });
   const [appLoading, setAppLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
-
-  // Check for browser compatibility
+  
   useEffect(() => {
-    // Check for localStorage support
     const hasLocalStorage = (() => {
       try {
         localStorage.setItem('test', 'test');
@@ -43,7 +39,6 @@ function App() {
       }
     })();
     
-    // Check for Web3 support
     const hasWeb3 = typeof window !== 'undefined' && 
                     (typeof window.ethereum !== 'undefined' || 
                      typeof window.web3 !== 'undefined');
@@ -53,12 +48,10 @@ function App() {
       web3: hasWeb3
     });
     
-    // App has completed initialization
     setIsInitialized(true);
     setAppLoading(false);
   }, []);
 
-  // Show loading screen while checking compatibility
   if (appLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -67,7 +60,6 @@ function App() {
     );
   }
 
-  // Show compatibility warning if necessary
   if (!appSupport.localStorage || !appSupport.web3) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -102,7 +94,6 @@ function App() {
   );
 }
 
-// Separate component to use contexts
 function AppContent() {
   const { 
     isConnected, 
@@ -113,32 +104,36 @@ function AppContent() {
     openAuthModal 
   } = useAppContext();
 
-  // Protected route component
+  const [activeFilter, setActiveFilter] = useState('all');
+
+  const handleFilterChange = (filter) => {
+    setActiveFilter(filter);
+    console.log('Filter changed to:', filter);
+  };
+
   const ProtectedRoute = ({ children }) => {
     if (!isConnected) {
-      // Open the auth modal instead of redirecting
       openAuthModal();
-      // Return null to prevent showing the protected route
       return <Navigate to="/" />;
     }
-    
     return children;
   };
 
-  // Admin route component
   const AdminRoute = ({ children }) => {
     if (!isAdmin) {
-      // Redirect non-admin users to home
       return <Navigate to="/" />;
     }
-    
     return children;
   };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Use the Navbar component */}
       <Navbar />
+      
+      <SubNav 
+        onTabChange={handleFilterChange} 
+        nonClickableItems={['live']} 
+      />
       
       <main className="container mx-auto px-4 py-8 flex-grow">
         <Routes>
@@ -156,7 +151,6 @@ function AppContent() {
             } 
           />
           
-          {/* Admin Routes - Protected and requires admin access */}
           <Route 
             path="/admin/dashboard" 
             element={
@@ -168,7 +162,6 @@ function AppContent() {
             } 
           />
           
-          {/* New Admin Config Route */}
           <Route 
             path="/admin/config" 
             element={
@@ -198,10 +191,8 @@ function AppContent() {
         </div>
       </footer>
       
-      {/* Authentication Modal */}
       <AuthModal />
       
-      {/* Username Modal - Only shown when needed */}
       {isConnected && needsUsername && <UsernameModal />}
     </div>
   );
