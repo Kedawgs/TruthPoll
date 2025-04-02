@@ -13,7 +13,6 @@ const PollDetail = () => {
     account,
     authType,
     openAuthModal,
-    userProfile, // Assuming userProfile might be used later
     getPoll,
     votePoll,
     pollLoading, // Use this for voting loading state

@@ -3,7 +3,6 @@
 
 import React, { createContext, useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
-import axios from 'axios'; // Needed if making direct backend calls from context (though less likely now)
 import createMagicInstance from '../config/magic';
 import api from '../utils/api'; // Ensure api instance with authentication logic is imported
 import logger from '../utils/logger';

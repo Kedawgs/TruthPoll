@@ -12,7 +12,7 @@ export const ContractContext = createContext();
 
 export const ContractProvider = ({ children }) => {
   const { isConnected, account, authType, provider, signer } = useContext(AuthContext);
-  const { smartWalletAddress, deploySmartWalletIfNeeded, signSmartWalletTransaction } = useContext(WalletContext);
+  const { deploySmartWalletIfNeeded, signSmartWalletTransaction } = useContext(WalletContext);
 
   const [pollLoading, setPollLoading] = useState(false);
   const [pollError, setPollError] = useState(null);
@@ -205,26 +205,52 @@ export const ContractProvider = ({ children }) => {
     }
   }, [isConnected, account]);
 
-  // Get polls - MODIFIED TO HANDLE ABORT SIGNAL
+  // Get polls - FIXED VERSION WITH PROPER CANCELLATION HANDLING
   const getPolls = useCallback(async (params = {}) => {
     try {
-      // Pass the signal from params to the api call config
-      // Assuming api utility (like axios) supports the signal option
-      const response = await api.get('/polls', { params: params, signal: params.signal });
+      // Extract signal from params to pass to axios config
+      const { signal, ...queryParams } = params;
+      
+      // Create config object with signal if provided
+      const config = {
+        params: queryParams
+      };
+      
+      // Add signal to config if provided
+      if (signal) {
+        config.signal = signal;
+      }
+      
+      // Make the request with proper configuration
+      const response = await api.get('/polls', config);
       return response.data;
     } catch (error) {
-      // Check if the error is due to the request being aborted
-      if (error.name === 'AbortError') {
-        // Request was aborted, log it and return a default structure
-        // This prevents downstream code from breaking if it expects a certain object shape
-        logger.info('Polls fetch aborted');
-        return { data: [], pagination: { totalPages: 1, currentPage: 1, totalCount: 0 } };
+      // Check if this is a cancellation (aborted request)
+      // Handle all possible cancellation error types
+      if (error.name === 'CanceledError' || 
+          error.name === 'AbortError' || 
+          error.code === 'ERR_CANCELED' ||
+          (error.message && error.message.toLowerCase().includes('cancel'))) {
+        
+        // Log cancellation at debug level, not error
+        logger.debug(`Polls request cancelled: ${error.message}`);
+        
+        // Return a default response structure to prevent downstream errors
+        return {
+          data: [],
+          pagination: {
+            totalPages: 1,
+            page: 1,
+            total: 0
+          }
+        };
       }
-      // For any other error, log and re-throw
+      
+      // For real errors, log and rethrow
       logger.error("Error fetching polls:", error);
       throw error;
     }
-  }, []); // No dependencies needed as it doesn't rely on context state/props
+  }, []); // No dependencies needed as it doesn't rely on context state
 
   // Get single poll
   const getPoll = useCallback(async (id) => {

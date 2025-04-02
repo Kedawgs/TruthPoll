@@ -6,7 +6,7 @@ import api from '../utils/api';
 
 const AdminConfig = () => {
   const navigate = useNavigate();
-  const { isConnected, isAdmin, config, refreshConfig } = useAppContext();
+  const { isConnected, isAdmin, refreshConfig } = useAppContext();
   
   const [configItems, setConfigItems] = useState([]);
   const [loading, setLoading] = useState(true);

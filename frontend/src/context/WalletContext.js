@@ -10,7 +10,7 @@ import { requestWalletDeployment } from '../utils/web3Helper';
 export const WalletContext = createContext();
 
 export const WalletProvider = ({ children }) => {
-  const { isConnected, account, authType, provider, signer, openAuthModal } = useContext(AuthContext);
+  const { isConnected, account, authType, provider, openAuthModal } = useContext(AuthContext);
   
   // Smart wallet state
   const [smartWalletAddress, setSmartWalletAddress] = useState(null);
@@ -23,65 +23,96 @@ export const WalletProvider = ({ children }) => {
   // USDT token address
   const [usdtAddress] = useState(process.env.REACT_APP_USDT_ADDRESS);
   
-  // Listen for logout events
-  useEffect(() => {
-    const handleLogout = () => {
-      // Reset wallet state on logout
-      logger.info("WalletContext: Handling logout event");
-      setSmartWalletAddress(null);
-      setIsSmartWalletDeployed(false);
-      setUsdtBalance("0.00");
-      setWalletLoading(false);
-      setWalletError(null);
-      setWalletData(null);
-    };
-    
-    window.addEventListener('auth:logout', handleLogout);
-    
-    return () => {
-      window.removeEventListener('auth:logout', handleLogout);
-    };
-  }, []);
+  // First define all callback functions BEFORE using them in useEffect
   
-  // Listen for wallet authentication required events
-  useEffect(() => {
-    const handleWalletAuthRequired = () => {
-      logger.info("Authentication required for wallet operations");
-      // Reset error state and prompt for authentication
-      setWalletError("Authentication required. Please sign in first.");
-      // If we have access to the auth modal, open it
-      if (openAuthModal) {
-        openAuthModal();
-      }
-    };
-    
-    window.addEventListener('wallet:auth:required', handleWalletAuthRequired);
-    
-    return () => {
-      window.removeEventListener('wallet:auth:required', handleWalletAuthRequired);
-    };
-  }, [openAuthModal]);
-  
-  // Load smart wallet data when auth state changes
-  useEffect(() => {
-    if (isConnected && account) {
-      if (authType === 'wallet') {
-        // For regular wallet users, get their smart wallet
-        getSmartWalletAddress(account);
+  // Get USDT balance - works for both Magic and wallet users
+  const getUSDTBalance = useCallback(async () => {
+    try {
+      // For Magic users, use their Ethereum address directly
+      // For wallet users, use the smart wallet address
+      const walletToCheck = authType === 'magic' 
+        ? account  // Magic user's address
+        : smartWalletAddress;  // Smart wallet for non-Magic users
+      
+      // Log which wallet we're checking
+      if (authType === 'magic') {
+        logger.info(`Checking balance for Magic user: ${walletToCheck}`);
+      } else {
+        if (!walletToCheck) {
+          logger.info("Smart wallet not available yet");
+          return "0.00";  // Early return for wallet users without smart wallet
+        }
+        logger.info(`Checking balance for smart wallet: ${walletToCheck}`);
       }
       
-      // Get USDT balance for any connected user
-      refreshUSDTBalance();
-    } else {
-      // Reset wallet state when disconnected
-      setSmartWalletAddress(null);
-      setIsSmartWalletDeployed(false);
-      setWalletData(null);
+      // If we have a provider and wallet address, try to get the balance
+      if (provider && walletToCheck) {
+        try {
+          const testnetUsdtAddress = usdtAddress;
+          logger.info(`Using token address: ${testnetUsdtAddress}`);
+          
+          // Use a simplified token ABI with just balanceOf
+          const tokenAbi = [
+            "function balanceOf(address owner) view returns (uint256)",
+            "function decimals() view returns (uint8)"
+          ];
+          
+          const tokenContract = new ethers.Contract(
+            testnetUsdtAddress, 
+            tokenAbi, 
+            provider
+          );
+          
+          // Try to get decimals, default to 6 for USDT
+          let decimals = 6;
+          try {
+            const tokenDecimals = await tokenContract.decimals();
+            decimals = tokenDecimals;
+            logger.info(`Token decimals: ${decimals}`);
+          } catch (decimalError) {
+            logger.info("Could not get token decimals, using default (6)");
+          }
+          
+          // Get balance
+          const balance = await tokenContract.balanceOf(walletToCheck);
+          logger.info(`Raw balance: ${balance.toString()}`);
+          
+          // Format balance with decimals
+          const formattedBalance = parseFloat(ethers.utils.formatUnits(balance, decimals)).toFixed(2);
+          logger.info(`Formatted balance: ${formattedBalance}`);
+          
+          return formattedBalance;
+        } catch (error) {
+          logger.error("Error getting token balance from blockchain:", error);
+          // For development, return mock balance
+          if (process.env.NODE_ENV === 'development') {
+            logger.info("Using mock balance during development");
+            return "100.00";  // Mock balance for development
+          }
+          return "0.00";
+        }
+      }
+      
+      // Fallback if no provider or wallet
+      return "0.00";
+    } catch (error) {
+      logger.error("Error in getUSDTBalance:", error);
+      return "0.00";
     }
-  }, [isConnected, account, authType]);
+  }, [account, authType, provider, smartWalletAddress, usdtAddress]);
+  
+  // Refresh USDT balance
+  const refreshUSDTBalance = useCallback(async () => {
+    if (isConnected) {
+      const balance = await getUSDTBalance();
+      setUsdtBalance(balance);
+      return balance;
+    }
+    return "0.00";
+  }, [isConnected, getUSDTBalance]);
   
   // Get smart wallet address from the backend - optimized to store complete data
-  const getSmartWalletAddress = async (userAddress) => {
+  const getSmartWalletAddress = useCallback(async (userAddress) => {
     try {
       setWalletLoading(true);
       // Only proceed if this is a wallet user (not Magic)
@@ -113,10 +144,10 @@ export const WalletProvider = ({ children }) => {
       setWalletLoading(false);
       return null;
     }
-  };
+  }, [authType]);
   
   // Deploy smart wallet if needed - IMPROVED to use stored wallet data
-  const deploySmartWalletIfNeeded = async () => {
+  const deploySmartWalletIfNeeded = useCallback(async () => {
     try {
       setWalletLoading(true);
       setWalletError(null);
@@ -217,96 +248,10 @@ export const WalletProvider = ({ children }) => {
       setWalletLoading(false);
       throw error;
     }
-  };
-  
-  // Get USDT balance - works for both Magic and wallet users
-  const getUSDTBalance = useCallback(async () => {
-    try {
-      // For Magic users, use their Ethereum address directly
-      // For wallet users, use the smart wallet address
-      const walletToCheck = authType === 'magic' 
-        ? account  // Magic user's address
-        : smartWalletAddress;  // Smart wallet for non-Magic users
-      
-      // Log which wallet we're checking
-      if (authType === 'magic') {
-        logger.info(`Checking balance for Magic user: ${walletToCheck}`);
-      } else {
-        if (!walletToCheck) {
-          logger.info("Smart wallet not available yet");
-          return "0.00";  // Early return for wallet users without smart wallet
-        }
-        logger.info(`Checking balance for smart wallet: ${walletToCheck}`);
-      }
-      
-      // If we have a provider and wallet address, try to get the balance
-      if (provider && walletToCheck) {
-        try {
-          const testnetUsdtAddress = usdtAddress;
-          logger.info(`Using token address: ${testnetUsdtAddress}`);
-          
-          // Use a simplified token ABI with just balanceOf
-          const tokenAbi = [
-            "function balanceOf(address owner) view returns (uint256)",
-            "function decimals() view returns (uint8)"
-          ];
-          
-          const tokenContract = new ethers.Contract(
-            testnetUsdtAddress, 
-            tokenAbi, 
-            provider
-          );
-          
-          // Try to get decimals, default to a6 for USDT
-          let decimals = 6;
-          try {
-            const tokenDecimals = await tokenContract.decimals();
-            decimals = tokenDecimals;
-            logger.info(`Token decimals: ${decimals}`);
-          } catch (decimalError) {
-            logger.info("Could not get token decimals, using default (6)");
-          }
-          
-          // Get balance
-          const balance = await tokenContract.balanceOf(walletToCheck);
-          logger.info(`Raw balance: ${balance.toString()}`);
-          
-          // Format balance with decimals
-          const formattedBalance = parseFloat(ethers.utils.formatUnits(balance, decimals)).toFixed(2);
-          logger.info(`Formatted balance: ${formattedBalance}`);
-          
-          return formattedBalance;
-        } catch (error) {
-          logger.error("Error getting token balance from blockchain:", error);
-          // For development, return mock balance
-          if (process.env.NODE_ENV === 'development') {
-            logger.info("Using mock balance during development");
-            return "100.00";  // Mock balance for development
-          }
-          return "0.00";
-        }
-      }
-      
-      // Fallback if no provider or wallet
-      return "0.00";
-    } catch (error) {
-      logger.error("Error in getUSDTBalance:", error);
-      return "0.00";
-    }
-  }, [account, authType, provider, smartWalletAddress, usdtAddress]);
-  
-  // Refresh USDT balance
-  const refreshUSDTBalance = useCallback(async () => {
-    if (isConnected) {
-      const balance = await getUSDTBalance();
-      setUsdtBalance(balance);
-      return balance;
-    }
-    return "0.00";
-  }, [isConnected, getUSDTBalance]);
+  }, [account, authType, isConnected, openAuthModal, walletData, getSmartWalletAddress]);
   
   // Sign a transaction for a smart wallet
-  const signSmartWalletTransaction = async (targetAddress, callData, value = 0) => {
+  const signSmartWalletTransaction = useCallback(async (targetAddress, callData, value = 0) => {
     try {
       if (!isConnected || !provider) {
         throw new Error("Wallet not connected");
@@ -348,7 +293,66 @@ export const WalletProvider = ({ children }) => {
       logger.error("Error signing smart wallet transaction:", error);
       throw error;
     }
-  };
+  }, [isConnected, authType, provider]);
+  
+  // NOW we can use these functions in useEffect
+  
+  // Listen for logout events
+  useEffect(() => {
+    const handleLogout = () => {
+      // Reset wallet state on logout
+      logger.info("WalletContext: Handling logout event");
+      setSmartWalletAddress(null);
+      setIsSmartWalletDeployed(false);
+      setUsdtBalance("0.00");
+      setWalletLoading(false);
+      setWalletError(null);
+      setWalletData(null);
+    };
+    
+    window.addEventListener('auth:logout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('auth:logout', handleLogout);
+    };
+  }, []);
+  
+  // Listen for wallet authentication required events
+  useEffect(() => {
+    const handleWalletAuthRequired = () => {
+      logger.info("Authentication required for wallet operations");
+      // Reset error state and prompt for authentication
+      setWalletError("Authentication required. Please sign in first.");
+      // If we have access to the auth modal, open it
+      if (openAuthModal) {
+        openAuthModal();
+      }
+    };
+    
+    window.addEventListener('wallet:auth:required', handleWalletAuthRequired);
+    
+    return () => {
+      window.removeEventListener('wallet:auth:required', handleWalletAuthRequired);
+    };
+  }, [openAuthModal]);
+  
+  // Load smart wallet data when auth state changes
+  useEffect(() => {
+    if (isConnected && account) {
+      if (authType === 'wallet') {
+        // For regular wallet users, get their smart wallet
+        getSmartWalletAddress(account);
+      }
+      
+      // Get USDT balance for any connected user
+      refreshUSDTBalance();
+    } else {
+      // Reset wallet state when disconnected
+      setSmartWalletAddress(null);
+      setIsSmartWalletDeployed(false);
+      setWalletData(null);
+    }
+  }, [isConnected, account, authType, getSmartWalletAddress, refreshUSDTBalance]);
   
   return (
     <WalletContext.Provider

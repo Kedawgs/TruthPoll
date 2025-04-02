@@ -6,7 +6,7 @@ import api from '../utils/api';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const { isConnected, isAdmin, account } = useAppContext();
+  const { isConnected, account } = useAppContext();
   const [stats, setStats] = useState({
     totalPolls: 0,
     totalUsers: 0,
@@ -35,7 +35,7 @@ const AdminDashboard = () => {
     }
   };
   
-  // Check if user is admin, redirect if not
+  // src/pages/AdminDashboard.js - Add missing dependency
   useEffect(() => {
     if (!isConnected || !account) {
       navigate('/');
@@ -60,7 +60,7 @@ const AdminDashboard = () => {
         totalRewards: 250
       });
     }, 1000);
-  }, [isConnected, account, navigate]);
+  }, [isConnected, account, navigate, verifyAdmin]);
   
   if (loading) {
     return (

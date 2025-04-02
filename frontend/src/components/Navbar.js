@@ -15,7 +15,6 @@ const Navbar = () => {
   const { 
     isConnected, 
     account, 
-    authType,
     isAdmin,
     logout,
     openAuthModal,

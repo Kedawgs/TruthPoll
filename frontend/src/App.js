@@ -108,14 +108,12 @@ function App() {
 function AppContent() {
   const {
     isConnected,
-    account,
     isAdmin,
-    logout,
     needsUsername,
     openAuthModal
   } = useAppContext();
 
-  const [activeFilter, setActiveFilter] = useState('all');
+  const [, setActiveFilter] = useState('all');
 
   const handleFilterChange = (filter) => {
     setActiveFilter(filter);

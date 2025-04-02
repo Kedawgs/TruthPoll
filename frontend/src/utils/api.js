@@ -1,4 +1,4 @@
-// frontend/src/utils/api.js - Fixed version
+// frontend/src/utils/api.js - Improved error handling version
 
 import axios from 'axios';
 import logger from './logger';
@@ -69,14 +69,15 @@ api.interceptors.request.use(async (config) => {
     }
     return config;
 }, (error) => {
-    logger.error('Request interceptor error:', error);
+    logger.error('Request setup error:', error);
     return Promise.reject(error);
 });
 
-
-// --- Response Interceptor ---
+// --- Response Interceptor --- IMPROVED ERROR HANDLING
 api.interceptors.response.use(
     (response) => {
+        // Successful response processing remains unchanged
+        
         // Store wallet address if present
         if (response.data?.data?.publicAddress) {
             localStorage.setItem('walletAddress', response.data.data.publicAddress.toLowerCase());
@@ -99,15 +100,25 @@ api.interceptors.response.use(
         return response;
     },
     (error) => {
+        // IMPORTANT: Check for AbortError/CanceledError first - all possible cancellation variants
+        if (axios.isCancel(error) || 
+            error.name === 'CanceledError' || 
+            error.name === 'AbortError' || 
+            error.code === 'ERR_CANCELED' || 
+            (error.message && error.message.toLowerCase().includes('cancel'))) {
+            
+            // This is an expected cancellation - log at debug level, not error
+            logger.debug(`Request cancelled: ${error.message}`);
+            return Promise.reject(error);
+        }
+        
+        // Handle actual errors (not cancellations)
         if (error.response) {
             logger.error(`API Error: ${error.response.status} ${JSON.stringify(error.response.data)}`);
             
             // Special handling for unauthorized image upload
             if (error.response.status === 401 && error.config.url.includes('/polls/upload-image')) {
                 logger.error('Authentication failed for image upload - check if you are properly logged in');
-                
-                // We could redirect to auth here, but let's just log for now
-                // window.dispatchEvent(new CustomEvent('auth:required'));
             }
             
             // Handle 401 errors
@@ -127,17 +138,19 @@ api.interceptors.response.use(
                 }
 
                 // Don't automatically clear credentials for image upload errors
-                // This way we don't log the user out if there's an issue
                 if (!error.config.url.includes('/polls/upload-image')) {
                     // Clear potentially invalid credentials
                     api.logout();
                 }
             }
         } else if (error.request) {
+            // For network errors - request made but no response received
             logger.error('Network error - no response received:', error.request);
         } else {
+            // For errors outside of request/response cycle
             logger.error('Request setup error:', error.message);
         }
+        
         return Promise.reject(error);
     }
 );

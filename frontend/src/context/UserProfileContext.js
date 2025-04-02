@@ -9,7 +9,7 @@ import logger from '../utils/logger';
 export const UserProfileContext = createContext();
 
 export const UserProfileProvider = ({ children }) => {
-  const { isConnected, account, authType } = useContext(AuthContext);
+  const { isConnected, account} = useContext(AuthContext);
   
   // User profile state
   const [userProfile, setUserProfile] = useState(null);
