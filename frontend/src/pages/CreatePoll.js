@@ -182,47 +182,73 @@ const CreatePoll = () => {
     // Filter out empty options before submission
     const validOptionsSubmit = options.filter(option => option.trim().length > 0);
 
+    // --- NEW handleSubmit try...catch block starts here ---
     try {
-        // Prepare base poll data
-        const pollData = {
-          title: title.trim(),
-          description: description.trim(),
-          options: validOptionsSubmit,
-          duration: parseInt(duration || '0'),
-          tags: selectedTags,
-          category: 'General', // You may want to add a category selector
-          rewardPerVoter: isRewardEnabled ? rewardPerVoter : '0',
-          voteLimit: parseInt(voteLimit),
-          image: null, // Initialize image field (S3 key)
-          imageUrl: null // Initialize imageUrl field (Full S3 URL)
-        };
+      // Prepare base poll data
+      const pollData = {
+        title: title.trim(),
+        description: description.trim(),
+        options: validOptionsSubmit,
+        duration: parseInt(duration || '0'),
+        tags: selectedTags,
+        category: 'General', // You may want to add a category selector
+        rewardPerVoter: isRewardEnabled ? rewardPerVoter : '0',
+        voteLimit: parseInt(voteLimit),
+        image: null, // Initialize image field (S3 key)
+        imageUrl: null // Initialize imageUrl field (Full S3 URL)
+      };
 
-        // --- Image Upload Logic ---
-        if (selectedFile) {
-          const formData = new FormData();
-          formData.append('image', selectedFile); // 'image' should match backend field name
+      // --- Enhanced Image Upload Logic ---
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append('image', selectedFile); // 'image' should match backend field name
 
-          try {
-            console.log("Attempting to upload image...");
-            const uploadResponse = await api.post('/polls/upload-image', formData, {
-              headers: {
-                'Content-Type': 'multipart/form-data'
-              }
-            });
+        // Check authentication before upload
+        const authToken = localStorage.getItem('authToken');
+        if (!authToken && isConnected) {
+          console.warn("No auth token found. May encounter authentication issues with upload.");
+        }
 
-            // Check structure of uploadResponse - adjust based on your updated backend
-            // --- MODIFIED SECTION START ---
-            if (uploadResponse.data && uploadResponse.data.success) {
-              // Store both the S3 key and the full URL
-              pollData.image = uploadResponse.data.image; // S3 key
-              pollData.imageUrl = uploadResponse.data.imageUrl; // Full S3 URL
-              console.log("Image uploaded successfully:", pollData.imageUrl);
-            // --- MODIFIED SECTION END ---
-            } else {
-              console.warn("Image upload response invalid:", uploadResponse.data);
-              throw new Error(uploadResponse.data?.message || 'Image upload failed.');
+        try {
+          console.log("Attempting to upload image...");
+          const uploadResponse = await api.post('/polls/upload-image', formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data'
             }
-          } catch (uploadErr) {
+          });
+
+          // Check structure of uploadResponse
+          if (uploadResponse.data && uploadResponse.data.success) {
+            // Store both the S3 key and the full URL
+            pollData.image = uploadResponse.data.image; // S3 key
+            pollData.imageUrl = uploadResponse.data.imageUrl; // Full S3 URL
+            console.log("Image uploaded successfully:", pollData.imageUrl);
+          } else {
+            console.warn("Image upload response invalid:", uploadResponse.data);
+            throw new Error(uploadResponse.data?.message || 'Image upload failed.');
+          }
+        } catch (uploadErr) {
+          // Special handling for auth errors
+          if (uploadErr.response && uploadErr.response.status === 401) {
+            console.error('Authentication error during image upload:', uploadErr);
+            const retryWithAuth = window.confirm(
+              "Authentication error uploading image. Would you like to reconnect your wallet and try again?"
+            );
+
+            if (retryWithAuth) {
+              // Open auth modal and abort current submission
+              openAuthModal();
+              setFormError("Please reconnect your wallet and try again");
+              // setWalletLoading(false); // Removed: setWalletLoading is not defined here
+              return; // Exit early
+            } else {
+              // Continue without image
+              console.log("Continuing poll creation without image");
+              pollData.image = null;
+              pollData.imageUrl = null;
+            }
+          } else {
+            // Handle other upload errors
             console.error('Error uploading image:', uploadErr);
             const uploadErrorMsg = uploadErr?.response?.data?.message || uploadErr.message || 'Failed to upload image.';
             setFormError(`Poll not created: ${uploadErrorMsg}`);
@@ -230,22 +256,24 @@ const CreatePoll = () => {
             return; // Stop submission if image upload fails
           }
         }
-        // --- End Image Upload Logic ---
+      }
+      // --- End Enhanced Image Upload Logic ---
 
-        console.log("Submitting Final Poll Data:", pollData);
-        const response = await createPoll(pollData); // Pass data including the image URL/ID
+      console.log("Submitting Final Poll Data:", pollData);
+      const response = await createPoll(pollData); // Pass data including the image URL/ID
 
-        if (response?.data?.poll?._id) {
-          // Show success message briefly before redirecting
-          setPollCreationSuccess(true);
-          setTimeout(() => {
-            navigate(`/polls/${response.data.poll._id}`);
-          }, 1000);
-        } else {
-          console.warn("Poll created but response format unexpected:", response);
-          setFormError("Poll created, but couldn't redirect to the poll page. Please check your polls list.");
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
+      if (response?.data?.poll?._id) {
+        // Show success message briefly before redirecting
+        setPollCreationSuccess(true);
+        setTimeout(() => {
+            // Using the redirect path from the new snippet
+          navigate(`/polls/id/${response.data.poll._id}`);
+        }, 1000);
+      } else {
+        console.warn("Poll created but response format unexpected:", response);
+        setFormError("Poll created, but couldn't redirect to the poll page. Please check your polls list.");
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     } catch (err) {
       console.error('Error creating poll:', err);
       // Improved error message extraction
@@ -258,6 +286,7 @@ const CreatePoll = () => {
       // Scroll to the error message
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+    // --- NEW handleSubmit try...catch block ends here ---
   };
 
   // --- Render Logic ---
@@ -472,45 +501,45 @@ const CreatePoll = () => {
 
                {/* Selected Tags Area */}
                <div className="mb-3 p-3 border border-gray-200 rounded-lg bg-slate-50 min-h-[44px] flex flex-wrap gap-2 items-center">
-                    {selectedTags.length === 0 && (
-                      <span className="text-sm text-gray-400 italic">Click tags below to add</span>
-                    )}
-                    {selectedTags.map((tag) => (
-                      <span key={tag} className="inline-flex items-center pl-3 pr-1.5 py-1 rounded-full text-sm font-medium bg-cyan-600 text-white shadow-sm">
-                        {tag}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTag(tag)}
-                          className="ml-1.5 flex-shrink-0 p-0.5 text-cyan-100 hover:text-white hover:bg-cyan-700 rounded-full focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-cyan-400"
-                          aria-label={`Remove ${tag} tag`}
-                        >
-                          <RemoveIcon />
-                        </button>
-                      </span>
-                    ))}
+                   {selectedTags.length === 0 && (
+                     <span className="text-sm text-gray-400 italic">Click tags below to add</span>
+                   )}
+                   {selectedTags.map((tag) => (
+                     <span key={tag} className="inline-flex items-center pl-3 pr-1.5 py-1 rounded-full text-sm font-medium bg-cyan-600 text-white shadow-sm">
+                       {tag}
+                       <button
+                         type="button"
+                         onClick={() => handleRemoveTag(tag)}
+                         className="ml-1.5 flex-shrink-0 p-0.5 text-cyan-100 hover:text-white hover:bg-cyan-700 rounded-full focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-cyan-400"
+                         aria-label={`Remove ${tag} tag`}
+                       >
+                         <RemoveIcon />
+                       </button>
+                     </span>
+                   ))}
                </div>
 
                {/* Fixed Available Tags Area - 2 rows high with horizontal scroll */}
                <div className="h-20 overflow-y-hidden overflow-x-auto py-2 flex flex-wrap content-start scrollbar-thin scrollbar-thumb-gray-300 hover:scrollbar-thumb-gray-400 scrollbar-track-gray-100 border-b border-gray-200">
-                    {AVAILABLE_TAGS.map((tag) => {
-                        const isSelected = selectedTags.includes(tag);
-                        const isDisabled = !canAddMoreTags && !isSelected;
-                        return (
-                            <button
-                                key={tag} type="button"
-                                onClick={() => isSelected ? handleRemoveTag(tag) : handleAddTag(tag)}
-                                disabled={isDisabled}
-                                title={isSelected ? `Remove ${tag}` : isDisabled ? `Max ${MAX_SELECTED_TAGS} tags reached` : `Add ${tag}`}
-                                className={`inline-block mr-2 mb-2 px-3 py-1 border rounded-full text-sm font-medium transition-all duration-150 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-cyan-500
-                                  ${isSelected
-                                    ? 'border-cyan-500 bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 opacity-60 cursor-default'
-                                    : isDisabled
-                                      ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-70'
-                                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400'
-                                  }`}
-                            > {tag} </button>
-                        );
-                    })}
+                   {AVAILABLE_TAGS.map((tag) => {
+                       const isSelected = selectedTags.includes(tag);
+                       const isDisabled = !canAddMoreTags && !isSelected;
+                       return (
+                         <button
+                           key={tag} type="button"
+                           onClick={() => isSelected ? handleRemoveTag(tag) : handleAddTag(tag)}
+                           disabled={isDisabled}
+                           title={isSelected ? `Remove ${tag}` : isDisabled ? `Max ${MAX_SELECTED_TAGS} tags reached` : `Add ${tag}`}
+                           className={`inline-block mr-2 mb-2 px-3 py-1 border rounded-full text-sm font-medium transition-all duration-150 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-cyan-500
+                             ${isSelected
+                               ? 'border-cyan-500 bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 opacity-60 cursor-default'
+                               : isDisabled
+                                 ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-70'
+                                 : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+                             }`}
+                         > {tag} </button>
+                       );
+                   })}
                </div>
                {formError && formError.includes('tags') && (
                 <p className="mt-1 text-sm text-red-600">{formError}</p>
@@ -599,7 +628,6 @@ const CreatePoll = () => {
           <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-inner min-h-[450px] flex flex-col">
             {/* Preview Header */}
             <div className="flex items-start mb-3 pb-3 border-b border-gray-100 flex-shrink-0">
-                {/* --- MODIFIED PREVIEW ICON SECTION START (matches original) --- */}
                 {/* Preview Icon */}
                 <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-200 border border-slate-300/75 mr-3 sm:mr-4 flex-shrink-0 flex items-center justify-center overflow-hidden">
                   {imagePreviewUrl ? (
@@ -608,7 +636,6 @@ const CreatePoll = () => {
                     <ImagePlaceholderIcon />
                   )}
                 </div>
-                 {/* --- MODIFIED PREVIEW ICON SECTION END --- */}
               <div className="flex-grow min-w-0">
                   <h3 className="font-semibold text-base sm:text-lg text-gray-900 break-words leading-tight">
                       {title.trim() || <span className="text-gray-400 italic">Poll Title Preview</span>}
