@@ -2,6 +2,7 @@
 const { successResponse, paginatedResponse } = require('../utils/responseHandler');
 const { NotFoundError, AuthorizationError, BlockchainError } = require('../utils/errorTypes');
 const logger = require('../utils/logger');
+const { getS3BaseUrl } = require('../utils/s3Utils');
 
 /**
  * @desc    Create a new poll
@@ -13,9 +14,14 @@ exports.createPoll = async (req, res, next) => {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
     
-    // Input validation and sanitization is now handled by the middleware
-    // We can directly use the validated data
+    // Input validation and sanitization is handled by the middleware
     const pollData = req.body;
+    
+    // If image key is provided, add the S3 URL
+    if (pollData.image) {
+      // Create the full S3 URL for the image
+      pollData.imageUrl = `${getS3BaseUrl()}${pollData.image}`;
+    }
     
     const result = await pollService.createPoll(pollData);
     
@@ -44,7 +50,8 @@ exports.getPolls = async (req, res, next) => {
       active: req.query.active || null,
       sortBy: req.query.sortBy || 'createdAt',
       sortOrder: req.query.sortOrder === 'asc' ? 'asc' : 'desc',
-      search: req.query.search || null
+      search: req.query.search || null,
+      hasRewards: req.query.hasRewards || null
     };
     
     const result = await pollService.getPolls(options);
@@ -66,6 +73,12 @@ exports.getPoll = async (req, res, next) => {
     const pollService = req.app.locals.pollService;
     
     const pollData = await pollService.getPoll(req.params.id);
+    
+    // If poll has an image key but no imageUrl, add it
+    if (pollData.data && pollData.data.image && !pollData.data.imageUrl) {
+      pollData.data.imageUrl = `${getS3BaseUrl()}${pollData.data.image}`;
+    }
+    
     return successResponse(res, pollData);
   } catch (error) {
     next(error);
@@ -82,7 +95,7 @@ exports.votePoll = async (req, res, next) => {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
     
-    // Input validation is now handled by middleware
+    // Input validation is handled by middleware
     const { optionIndex, voterAddress, signature } = req.body;
     
     // Verify address matches for Magic users
@@ -240,10 +253,19 @@ exports.searchPolls = async (req, res, next) => {
     // Get the poll service from app.locals
     const pollService = req.app.locals.pollService;
     
-    // Validation is now handled by middleware
+    // Validation is handled by middleware
     const { query } = req.query;
     
     const polls = await pollService.searchPolls(query);
+    
+    // Add S3 image URLs if needed
+    if (polls && polls.length > 0) {
+      polls.forEach(poll => {
+        if (poll.image && !poll.imageUrl) {
+          poll.imageUrl = `${getS3BaseUrl()}${poll.image}`;
+        }
+      });
+    }
     
     return successResponse(res, polls);
   } catch (error) {

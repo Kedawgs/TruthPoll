@@ -1,17 +1,18 @@
 // src/App.js
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+// Make sure useParams is imported from react-router-dom
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { useAppContext } from './hooks/useAppContext';
 import SubNav from './components/SubNav';
-import Navbar from './components/Navbar'; 
+import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import PollsList from './pages/PollsList';
 import PollDetail from './pages/PollDetail';
 import CreatePoll from './pages/CreatePoll';
 import Leaderboard from './pages/Leaderboard';
 import Activity from './pages/Activity';
-import MagicRedirect from './components/MagicRedirect'; 
+import MagicRedirect from './components/MagicRedirect';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
 import NotFound from './pages/NotFound';
@@ -20,6 +21,16 @@ import UsernameModal from './components/UsernameModal';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminConfig from './pages/AdminConfig';
 
+// --- Helper Wrapper Component for PollDetail ---
+// This component gets the 'id' and passes it as a 'key' to PollDetail
+function PollDetailWrapper() {
+  const { id } = useParams();
+  // When the 'id' changes, the key changes, forcing PollDetail to remount
+  return <PollDetail key={id} />;
+}
+// --- End Helper Wrapper ---
+
+
 function App() {
   const [appSupport, setAppSupport] = useState({
     localStorage: true,
@@ -27,7 +38,7 @@ function App() {
   });
   const [appLoading, setAppLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
-  
+
   useEffect(() => {
     const hasLocalStorage = (() => {
       try {
@@ -38,16 +49,16 @@ function App() {
         return false;
       }
     })();
-    
-    const hasWeb3 = typeof window !== 'undefined' && 
-                    (typeof window.ethereum !== 'undefined' || 
+
+    const hasWeb3 = typeof window !== 'undefined' &&
+                    (typeof window.ethereum !== 'undefined' ||
                      typeof window.web3 !== 'undefined');
-    
+
     setAppSupport({
       localStorage: hasLocalStorage,
       web3: hasWeb3
     });
-    
+
     setIsInitialized(true);
     setAppLoading(false);
   }, []);
@@ -95,13 +106,13 @@ function App() {
 }
 
 function AppContent() {
-  const { 
-    isConnected, 
+  const {
+    isConnected,
     account,
     isAdmin,
-    logout, 
+    logout,
     needsUsername,
-    openAuthModal 
+    openAuthModal
   } = useAppContext();
 
   const [activeFilter, setActiveFilter] = useState('all');
@@ -129,58 +140,65 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Navbar />
-      
-      <SubNav 
-        onTabChange={handleFilterChange} 
-        nonClickableItems={['live']} 
+
+      <SubNav
+        onTabChange={handleFilterChange}
+        nonClickableItems={['live']}
       />
-      
+
       <main className="container mx-auto px-4 py-8 flex-grow" style={{ marginTop: '114px' }}> {/* 56px navbar + 58px subnav */}
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/polls" element={<PollsList />} />
           <Route path="/polls/:filter" element={<PollsList />} />
-          <Route path="/polls/id/:id" element={<PollDetail />} />
+
+          {/* === UPDATED PollDetail Route === */}
+          <Route
+            path="/polls/id/:id"
+            element={<PollDetailWrapper />} // Use the wrapper component
+          />
+          {/* === END UPDATED Route === */}
+
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/activity" element={<Activity />} />
-          <Route 
-            path="/create-poll" 
+          <Route
+            path="/create-poll"
             element={
               <ProtectedRoute>
                 <CreatePoll />
               </ProtectedRoute>
-            } 
+            }
           />
-          
-          <Route 
-            path="/admin/dashboard" 
+
+          <Route
+            path="/admin/dashboard"
             element={
               <ProtectedRoute>
                 <AdminRoute>
                   <AdminDashboard />
                 </AdminRoute>
               </ProtectedRoute>
-            } 
+            }
           />
-          
-          <Route 
-            path="/admin/config" 
+
+          <Route
+            path="/admin/config"
             element={
               <ProtectedRoute>
                 <AdminRoute>
                   <AdminConfig />
                 </AdminRoute>
               </ProtectedRoute>
-            } 
+            }
           />
-          
+
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/magic-callback" element={<MagicRedirect />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
-      
+
       <footer className="bg-white border-t py-6 mt-auto">
         <div className="container mx-auto px-4 text-center text-gray-500 text-sm">
           <p>© {new Date().getFullYear()} TruthPoll. All rights reserved.</p>
@@ -191,9 +209,9 @@ function AppContent() {
           <p className="mt-2">Running on Polygon Amoy Testnet</p>
         </div>
       </footer>
-      
+
       <AuthModal />
-      
+
       {isConnected && needsUsername && <UsernameModal />}
     </div>
   );

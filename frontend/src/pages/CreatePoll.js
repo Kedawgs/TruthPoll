@@ -50,25 +50,25 @@ const CreatePoll = () => {
 
   // --- Effect to update preview votes ---
    useEffect(() => {
-    const currentVoteLimit = voteLimit ? parseInt(voteLimit) : 0;
-    if (currentVoteLimit > 0) {
-      const randomVotes = Math.floor(Math.random() * (currentVoteLimit + 1));
-      setPreviewVotes(randomVotes);
-      setPreviewVotePercentage((randomVotes / currentVoteLimit) * 100);
-    } else {
-      setPreviewVotes(0);
-      setPreviewVotePercentage(0);
-    }
-  }, [voteLimit]);
+     const currentVoteLimit = voteLimit ? parseInt(voteLimit) : 0;
+     if (currentVoteLimit > 0) {
+       const randomVotes = Math.floor(Math.random() * (currentVoteLimit + 1));
+       setPreviewVotes(randomVotes);
+       setPreviewVotePercentage((randomVotes / currentVoteLimit) * 100);
+     } else {
+       setPreviewVotes(0);
+       setPreviewVotePercentage(0);
+     }
+   }, [voteLimit]);
 
   // --- Effect to revoke object URL ---
   useEffect(() => {
-      // Clean up the object URL when the component unmounts or the file changes
-      return () => {
-          if (imagePreviewUrl) {
-              URL.revokeObjectURL(imagePreviewUrl);
-          }
-      };
+       // Clean up the object URL when the component unmounts or the file changes
+       return () => {
+           if (imagePreviewUrl) {
+               URL.revokeObjectURL(imagePreviewUrl);
+           }
+       };
   }, [imagePreviewUrl]);
 
 
@@ -193,7 +193,8 @@ const CreatePoll = () => {
           category: 'General', // You may want to add a category selector
           rewardPerVoter: isRewardEnabled ? rewardPerVoter : '0',
           voteLimit: parseInt(voteLimit),
-          image: null // Initialize image field
+          image: null, // Initialize image field (S3 key)
+          imageUrl: null // Initialize imageUrl field (Full S3 URL)
         };
 
         // --- Image Upload Logic ---
@@ -209,15 +210,17 @@ const CreatePoll = () => {
               }
             });
 
-            // Check structure of uploadResponse - adjust based on your actual API response
-            if (uploadResponse.data && uploadResponse.data.success && uploadResponse.data.image) {
-                pollData.image = uploadResponse.data.image; // Assign uploaded image identifier/URL
-                console.log("Image uploaded successfully:", pollData.image);
+            // Check structure of uploadResponse - adjust based on your updated backend
+            // --- MODIFIED SECTION START ---
+            if (uploadResponse.data && uploadResponse.data.success) {
+              // Store both the S3 key and the full URL
+              pollData.image = uploadResponse.data.image; // S3 key
+              pollData.imageUrl = uploadResponse.data.imageUrl; // Full S3 URL
+              console.log("Image uploaded successfully:", pollData.imageUrl);
+            // --- MODIFIED SECTION END ---
             } else {
-                console.warn("Image upload response invalid:", uploadResponse.data);
-                // Decide how to handle: proceed without image, or show error?
-                // For now, let's throw an error to halt poll creation.
-                throw new Error(uploadResponse.data?.message || 'Image upload failed.');
+              console.warn("Image upload response invalid:", uploadResponse.data);
+              throw new Error(uploadResponse.data?.message || 'Image upload failed.');
             }
           } catch (uploadErr) {
             console.error('Error uploading image:', uploadErr);
@@ -260,11 +263,11 @@ const CreatePoll = () => {
   // --- Render Logic ---
   if (!isConnected) {
        return ( // Connect Wallet Prompt
-         <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-xl shadow-lg text-center border border-gray-200">
-             <h2 className="text-2xl font-bold mb-4 text-gray-800">Create Your Poll</h2>
-             <p className="mb-6 text-gray-600"> Connect your wallet or sign in to start creating decentralized polls. </p>
-             <button onClick={openAuthModal} className="inline-flex items-center px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-lg shadow hover:from-cyan-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-150 ease-in-out"> Connect / Sign In </button>
-         </div>
+        <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-xl shadow-lg text-center border border-gray-200">
+            <h2 className="text-2xl font-bold mb-4 text-gray-800">Create Your Poll</h2>
+            <p className="mb-6 text-gray-600"> Connect your wallet or sign in to start creating decentralized polls. </p>
+            <button onClick={openAuthModal} className="inline-flex items-center px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-lg shadow hover:from-cyan-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-150 ease-in-out"> Connect / Sign In </button>
+        </div>
        );
    }
 
@@ -464,53 +467,53 @@ const CreatePoll = () => {
              {/* Tags Word Bank - Fixed to be 2 rows high */}
              <div>
                <label className="block text-sm font-bold text-gray-700 mb-2">
-                 Tags (Select up to {MAX_SELECTED_TAGS})
+                Tags (Select up to {MAX_SELECTED_TAGS})
                </label>
 
                {/* Selected Tags Area */}
                <div className="mb-3 p-3 border border-gray-200 rounded-lg bg-slate-50 min-h-[44px] flex flex-wrap gap-2 items-center">
-                   {selectedTags.length === 0 && (
-                     <span className="text-sm text-gray-400 italic">Click tags below to add</span>
-                   )}
-                   {selectedTags.map((tag) => (
-                     <span key={tag} className="inline-flex items-center pl-3 pr-1.5 py-1 rounded-full text-sm font-medium bg-cyan-600 text-white shadow-sm">
-                       {tag}
-                       <button
-                         type="button"
-                         onClick={() => handleRemoveTag(tag)}
-                         className="ml-1.5 flex-shrink-0 p-0.5 text-cyan-100 hover:text-white hover:bg-cyan-700 rounded-full focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-cyan-400"
-                         aria-label={`Remove ${tag} tag`}
-                       >
-                         <RemoveIcon />
-                       </button>
-                     </span>
-                   ))}
+                    {selectedTags.length === 0 && (
+                      <span className="text-sm text-gray-400 italic">Click tags below to add</span>
+                    )}
+                    {selectedTags.map((tag) => (
+                      <span key={tag} className="inline-flex items-center pl-3 pr-1.5 py-1 rounded-full text-sm font-medium bg-cyan-600 text-white shadow-sm">
+                        {tag}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTag(tag)}
+                          className="ml-1.5 flex-shrink-0 p-0.5 text-cyan-100 hover:text-white hover:bg-cyan-700 rounded-full focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-cyan-400"
+                          aria-label={`Remove ${tag} tag`}
+                        >
+                          <RemoveIcon />
+                        </button>
+                      </span>
+                    ))}
                </div>
 
                {/* Fixed Available Tags Area - 2 rows high with horizontal scroll */}
                <div className="h-20 overflow-y-hidden overflow-x-auto py-2 flex flex-wrap content-start scrollbar-thin scrollbar-thumb-gray-300 hover:scrollbar-thumb-gray-400 scrollbar-track-gray-100 border-b border-gray-200">
-                   {AVAILABLE_TAGS.map((tag) => {
-                       const isSelected = selectedTags.includes(tag);
-                       const isDisabled = !canAddMoreTags && !isSelected;
-                       return (
-                           <button
-                               key={tag} type="button"
-                               onClick={() => isSelected ? handleRemoveTag(tag) : handleAddTag(tag)}
-                               disabled={isDisabled}
-                               title={isSelected ? `Remove ${tag}` : isDisabled ? `Max ${MAX_SELECTED_TAGS} tags reached` : `Add ${tag}`}
-                               className={`inline-block mr-2 mb-2 px-3 py-1 border rounded-full text-sm font-medium transition-all duration-150 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-cyan-500
-                                 ${isSelected
-                                   ? 'border-cyan-500 bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 opacity-60 cursor-default'
-                                   : isDisabled
-                                     ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-70'
-                                     : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400'
-                                 }`}
-                           > {tag} </button>
-                       );
-                   })}
+                    {AVAILABLE_TAGS.map((tag) => {
+                        const isSelected = selectedTags.includes(tag);
+                        const isDisabled = !canAddMoreTags && !isSelected;
+                        return (
+                            <button
+                                key={tag} type="button"
+                                onClick={() => isSelected ? handleRemoveTag(tag) : handleAddTag(tag)}
+                                disabled={isDisabled}
+                                title={isSelected ? `Remove ${tag}` : isDisabled ? `Max ${MAX_SELECTED_TAGS} tags reached` : `Add ${tag}`}
+                                className={`inline-block mr-2 mb-2 px-3 py-1 border rounded-full text-sm font-medium transition-all duration-150 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-cyan-500
+                                  ${isSelected
+                                    ? 'border-cyan-500 bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200 opacity-60 cursor-default'
+                                    : isDisabled
+                                      ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-70'
+                                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+                                  }`}
+                            > {tag} </button>
+                        );
+                    })}
                </div>
                {formError && formError.includes('tags') && (
-                 <p className="mt-1 text-sm text-red-600">{formError}</p>
+                <p className="mt-1 text-sm text-red-600">{formError}</p>
                )}
              </div>
 
@@ -596,26 +599,28 @@ const CreatePoll = () => {
           <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-inner min-h-[450px] flex flex-col">
             {/* Preview Header */}
             <div className="flex items-start mb-3 pb-3 border-b border-gray-100 flex-shrink-0">
-                {/* Updated Preview Icon */}
+                {/* --- MODIFIED PREVIEW ICON SECTION START (matches original) --- */}
+                {/* Preview Icon */}
                 <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-200 border border-slate-300/75 mr-3 sm:mr-4 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                    {imagePreviewUrl ? (
-                        <img src={imagePreviewUrl} alt="Preview" className="w-full h-full object-cover" />
-                    ) : (
-                        <ImagePlaceholderIcon />
-                    )}
+                  {imagePreviewUrl ? (
+                    <img src={imagePreviewUrl} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <ImagePlaceholderIcon />
+                  )}
                 </div>
-                <div className="flex-grow min-w-0">
-                    <h3 className="font-semibold text-base sm:text-lg text-gray-900 break-words leading-tight">
-                        {title.trim() || <span className="text-gray-400 italic">Poll Title Preview</span>}
-                    </h3>
-                    <p className="text-xs text-gray-500 mt-1 truncate">by 0x123...abc (Creator)</p> {/* Placeholder address */}
-                </div>
-                <div className="text-right ml-2 flex-shrink-0 pl-2">
-                    <p className="text-sm font-semibold text-gray-800">
-                        <span className="text-lg">{previewVotes}</span> / { voteLimit || <span className="text-gray-400 italic">N/A</span> }
-                    </p>
-                    <p className="text-xs text-gray-500">Votes</p>
-                </div>
+                 {/* --- MODIFIED PREVIEW ICON SECTION END --- */}
+              <div className="flex-grow min-w-0">
+                  <h3 className="font-semibold text-base sm:text-lg text-gray-900 break-words leading-tight">
+                      {title.trim() || <span className="text-gray-400 italic">Poll Title Preview</span>}
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1 truncate">by 0x123...abc (Creator)</p> {/* Placeholder address */}
+              </div>
+              <div className="text-right ml-2 flex-shrink-0 pl-2">
+                  <p className="text-sm font-semibold text-gray-800">
+                      <span className="text-lg">{previewVotes}</span> / { voteLimit || <span className="text-gray-400 italic">N/A</span> }
+                  </p>
+                  <p className="text-xs text-gray-500">Votes</p>
+              </div>
             </div>
             {/* Preview Vote Count Progress Bar */}
             <div className="w-full bg-gray-200 rounded-full h-1.5 mb-4 flex-shrink-0 overflow-hidden">
@@ -659,16 +664,16 @@ const CreatePoll = () => {
 
                 {/* 4. Bar Chart Placeholder */}
                 <div className="my-4 flex-shrink-0">
-                   <div className="flex justify-around items-end h-24 px-2">
-                       {/* Static placeholder bars, adjust number/heights as needed */}
-                       {[40, 75, 20, 55].slice(0, Math.max(validOptions.length, 2)).map((heightPercent, index) => (
-                           <div key={index} className="w-1/5 bg-gradient-to-b from-slate-200 to-slate-300 rounded-t-md" style={{ height: `${heightPercent}%` }} title={`Option ${String.fromCharCode(65 + index)} Votes Preview`}></div>
-                       ))}
-                   </div>
-                   <div className="flex justify-around text-xs text-gray-500 mt-1 px-2">
-                       {/* Labels based on number of valid options (or min 2) */}
-                       {['A', 'B', 'C', 'D', 'E', 'F'].slice(0, Math.max(validOptions.length, 2)).map(label => <span key={label} className="w-1/5 text-center">{label}</span>)}
-                   </div>
+                    <div className="flex justify-around items-end h-24 px-2">
+                        {/* Static placeholder bars, adjust number/heights as needed */}
+                        {[40, 75, 20, 55].slice(0, Math.max(validOptions.length, 2)).map((heightPercent, index) => (
+                            <div key={index} className="w-1/5 bg-gradient-to-b from-slate-200 to-slate-300 rounded-t-md" style={{ height: `${heightPercent}%` }} title={`Option ${String.fromCharCode(65 + index)} Votes Preview`}></div>
+                        ))}
+                    </div>
+                    <div className="flex justify-around text-xs text-gray-500 mt-1 px-2">
+                        {/* Labels based on number of valid options (or min 2) */}
+                        {['A', 'B', 'C', 'D', 'E', 'F'].slice(0, Math.max(validOptions.length, 2)).map(label => <span key={label} className="w-1/5 text-center">{label}</span>)}
+                    </div>
                 </div>
 
 
@@ -685,7 +690,7 @@ const CreatePoll = () => {
                     {/* Placeholder options to fill space if less than 4 valid options */}
                     {validOptions.length < 4 && Array(4 - validOptions.length).fill(0).map((_, i) => (
                         <div key={`placeholder-${i}`} className="px-4 py-3 border border-dashed border-gray-300 rounded-lg bg-slate-100/50 text-gray-400 text-sm italic h-[50px] flex items-center">
-                             Option {String.fromCharCode(65 + validOptions.length + i)} preview...
+                            Option {String.fromCharCode(65 + validOptions.length + i)} preview...
                         </div>
                     ))}
                 </div>

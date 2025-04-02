@@ -1,3 +1,4 @@
+// backend/models/Poll.js
 const mongoose = require('mongoose');
 
 // Define the Poll schema
@@ -9,7 +10,10 @@ const PollSchema = new mongoose.Schema({
     maxlength: [100, 'Title cannot be more than 100 characters']
   },
   image: {
-    type: String
+    type: String // This will store the S3 object key
+  },
+  imageUrl: {
+    type: String // This will store the complete S3 URL
   },
   description: {
     type: String,
@@ -56,6 +60,21 @@ const PollSchema = new mongoose.Schema({
   },
   tags: {
     type: [String]
+  },
+  cachedVoteCount: {
+    type: Number,
+    default: 0
+  },
+  lastVoteSync: {
+    type: Date
+  },
+  hasRewards: {
+    type: Boolean,
+    default: false
+  },
+  rewardPerVoter: {
+    type: Number,
+    default: 0
   }
 });
 
