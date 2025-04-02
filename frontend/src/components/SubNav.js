@@ -28,14 +28,7 @@ const SubNav = ({ onTabChange, nonClickableItems = [] }) => {
     }
     
     setActiveTab(id);
-    
-    // Call the onTabChange callback if provided
-    if (onTabChange) {
-      onTabChange(id);
-    }
-    
-    // Navigate to the corresponding URL
-    navigate(`/polls/${id}`);
+    navigate(`/polls/${id}`); // Navigate directly
   };
   
   return (
