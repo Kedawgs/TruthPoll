@@ -21,6 +21,15 @@ const ContractService = require('./services/contractService');
 const RelayerService = require('./services/relayerService');
 const PollService = require('./services/pollService');
 
+// Import Routers (Best practice to import them here)
+const pollRoutes = require('./routes/pollRoutes');
+const contractRoutes = require('./routes/contractRoutes');
+const authRoutes = require('./routes/authRoutes');
+const smartWalletRoutes = require('./routes/smartWalletRoutes');
+const userRoutes = require('./routes/userRoutes');
+const configRoutes = require('./routes/configRoutes');
+const activityRoutes = require('./routes/activityRoutes'); // Import activity routes
+
 // Initialize express app
 const app = express();
 
@@ -48,63 +57,49 @@ app.use(express.urlencoded({ extended: false })); // Parse URL-encoded request b
 // Initialize Passport
 app.use(passport.initialize());
 
-// Apply Magic Auth Middleware (if it populates req.user for Magic users correctly)
-// Place this strategically if Magic needs to be checked before JWT or vice-versa
-// If magicAuth *only* verifies Magic tokens and doesn't interfere with Authorization headers,
-// its position relative to JWT middleware might not matter as much. If it *does* populate
-// req.user, place it appropriately depending on which auth method takes precedence if both are present.
+// Apply Magic Auth Middleware (Place strategically based on auth precedence)
 app.use(magicAuth);
 
-// Apply Passport JWT Authentication Middleware
-// This middleware will attempt to authenticate using the JWT strategy for *every* request after this point.
-// It populates req.user if a valid JWT bearer token is found, otherwise does nothing and passes control.
+// Apply Passport JWT Authentication Middleware (Populates req.user if valid token found)
 app.use((req, res, next) => {
-    // Check if req.user is already populated (e.g., by magicAuth)
-    // If you want JWT to potentially override or run only if magicAuth didn't authenticate:
-    // if (req.user) {
-    //     logger.debug('User already authenticated (potentially by Magic), skipping JWT check.');
-    //     return next();
-    // }
+    // Optional: Check if user already authenticated (e.g., by magicAuth)
+    // if (req.user) { return next(); }
 
     passport.authenticate('jwt', { session: false }, (err, user, info) => {
         if (err) {
             logger.error("Passport JWT Auth Error:", err);
-            // Decide if you want to halt on error or just log and continue
             return next(err); // Pass error to error handler
         }
         if (user) {
-            // Authentication successful, attach user payload to request
-            req.user = user; // This makes req.user available to subsequent middleware/routes
+            req.user = user; // Attach user payload to request
             logger.debug(`JWT Authenticated User: ${user.publicAddress}`);
         } else {
-            // No token provided, or token invalid/expired.
-            // Do not reject request here; let protected routes handle it via isAuthenticated middleware.
-            // Log info if available (e.g., 'No auth token', 'jwt expired')
+            // Log reason if available, but don't reject request here
              if (info instanceof Error) {
-                 logger.debug(`JWT Auth Info: ${info.message}`);
+                  logger.debug(`JWT Auth Info: ${info.message}`);
              } else if (info && info.message) {
-                 logger.debug(`JWT Auth Info: ${info.message}`);
+                  logger.debug(`JWT Auth Info: ${info.message}`);
              } else if (info) {
-                 logger.debug(`JWT Auth Info: ${JSON.stringify(info)}`);
+                  logger.debug(`JWT Auth Info: ${JSON.stringify(info)}`);
              } else {
-                 // Only log if Authorization header was present but failed validation
-                 if(req.headers.authorization?.startsWith('Bearer ')) {
-                     logger.debug("JWT Auth Info: Invalid or expired token provided.");
-                 } else {
-                     logger.debug("No JWT bearer token provided for this request.");
-                 }
+                  if(req.headers.authorization?.startsWith('Bearer ')) {
+                      logger.debug("JWT Auth Info: Invalid or expired token provided.");
+                  } else {
+                      // Avoid logging for every unauthenticated request unless debugging
+                      // logger.debug("No JWT bearer token provided for this request.");
+                  }
              }
         }
-        next(); // Proceed to the next middleware or route handler
-    })(req, res, next); // Immediately invoke the middleware function created by passport.authenticate
+        next(); // Proceed to the next middleware/route
+    })(req, res, next); // Immediately invoke the middleware
 });
 
 
 // --- Request Logging ---
-// Place after auth middleware so we can log the user if available
+// Place after auth middleware to log user info if available
 app.use((req, res, next) => {
     const userLog = req.user ? `(User: ${req.user.publicAddress})` : '(No User)';
-    logger.http(`${req.method} ${req.originalUrl} ${userLog}`); // Log request with user info if present
+    logger.http(`${req.method} ${req.originalUrl} ${userLog}`); // Log request details
     next();
 });
 
@@ -147,20 +142,21 @@ const initializeApp = async () => {
 
         // --- Mount API Routers ---
         // These come AFTER auth middleware so req.user can be populated
-        app.use('/api/polls', require('./routes/pollRoutes'));
-        app.use('/api/contracts', require('./routes/contractRoutes'));
-        app.use('/api/auth', require('./routes/authRoutes'));
-        app.use('/api/smart-wallets', require('./routes/smartWalletRoutes'));
-        app.use('/api/users', require('./routes/userRoutes'));
-        // In app.js where you're mounting API routes
-        app.use('/api/config', require('./routes/configRoutes'));
+        app.use('/api/polls', pollRoutes);
+        app.use('/api/contracts', contractRoutes);
+        app.use('/api/auth', authRoutes);
+        app.use('/api/smart-wallets', smartWalletRoutes);
+        app.use('/api/users', userRoutes);
+        app.use('/api/config', configRoutes);
+        app.use('/api/activity', activityRoutes); // <<< CORRECTLY MOUNTED HERE
+
         // Basic health check route
         app.get('/', (req, res) => {
             res.send('TruthPoll API is running');
-        });
+        }); // <<< Correctly closed
 
         // --- 404 Handler ---
-        // Catch-all for requests that don't match any route
+        // Catch-all for requests that don't match any defined route above
         app.use((req, res, next) => {
             res.status(404).json({
                 success: false,
@@ -169,7 +165,7 @@ const initializeApp = async () => {
         });
 
         // --- Global Error Handler ---
-        // Must be the LAST middleware
+        // Must be the LAST middleware defined
         app.use(errorHandler);
 
         return app; // Return the configured app instance
@@ -180,5 +176,5 @@ const initializeApp = async () => {
     }
 };
 
-// Export initialization function (and app if needed directly elsewhere, though less common)
-module.exports = { initializeApp, app }; // Use initializeApp in your server start script
+// Export initialization function (used in server.js)
+module.exports = { initializeApp, app }; // Export app mainly for potential testing setups
