@@ -342,8 +342,16 @@ const Navbar = () => {
                         className="profile-trigger flex items-center cursor-pointer" // Tailwind classes (ensure Tailwind is configured)
                         onMouseEnter={handleProfileMouseEnter} // Attach enter handler
                     >
-                        <div className="profile-circle">
-                            {getProfileInitial()}
+                        <div className="profile-circle overflow-hidden">
+                            {userProfile && userProfile.avatarUrl ? (
+                                <img 
+                                    src={userProfile.avatarUrl} 
+                                    alt="Profile" 
+                                    className="h-full w-full object-cover"
+                                />
+                            ) : (
+                                <span>{getProfileInitial()}</span>
+                            )}
                         </div>
                         {/* --- Chevron Icon --- */}
                         <svg

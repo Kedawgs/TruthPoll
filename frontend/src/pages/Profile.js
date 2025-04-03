@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../hooks/useAppContext';
-import { useNavigate } from 'react-router-dom'; // <<< ADD THIS IMPORT (or add useNavigate to existing import)
+import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { formatAddress } from '../utils/web3Helper'; // Assuming this formats like 0x123...abcd
 import './Profile.css'; // Import the specific CSS for this page
@@ -25,7 +25,7 @@ const ActionIcon = ({ className }) => <div className={`${className} w-4 h-4 text
 
 
 const Profile = () => {
-    const navigate = useNavigate(); // <<< CALL THE HOOK HERE
+    const navigate = useNavigate();
     const {
         isConnected,
         account,
@@ -115,6 +115,17 @@ const Profile = () => {
 
         loadProfileData();
     }, [isConnected, account, getReceivedRewards]); // Dependencies for re-fetching
+
+    // Helper function to get profile initial for avatar
+    const getProfileInitial = () => {
+        if (userProfile?.username) {
+            return userProfile.username.charAt(0).toUpperCase();
+        }
+        if (account) {
+            return account.substring(2, 3).toUpperCase();
+        }
+        return '?';
+    };
 
     // --- Render Functions for Tab Content ---
     const renderActivityList = () => (
@@ -209,15 +220,27 @@ const Profile = () => {
                 {/* --- Top Header Section --- */}
                 <div className="profile-header">
                     <div className="profile-info">
-                        {/* Placeholder Avatar - Replace with actual logic */}
-                        <img src={userProfile?.avatarUrl || "/placeholder-avatar.png"} alt="Profile Avatar" className="profile-avatar-img" />
+                        {/* Avatar with user image if available */}
+                        <div className="profile-avatar-img overflow-hidden">
+                            {userProfile && userProfile.avatarUrl ? (
+                                <img
+                                    src={userProfile.avatarUrl}
+                                    alt="Profile Avatar"
+                                    className="h-full w-full object-cover"
+                                />
+                            ) : (
+                                <div className="h-full w-full flex items-center justify-center bg-gray-200 text-gray-500 text-2xl font-semibold">
+                                    {getProfileInitial()}
+                                </div>
+                            )}
+                        </div>
                         <div className="profile-name-level">
                             <h1 className="profile-name">{userProfile?.username || formatAddress(account)}</h1>
-                             {/* Show address only if no username, or keep both */}
+                            {/* Show address only if no username, or keep both */}
                             {!userProfile?.username && (
                                 <p className="profile-address" title={account}>{formatAddress(account)}</p>
                             )}
-                            <p className="profile-level">Level {level}</p> {/* Use actual level */}
+                            <p className="profile-level">Level {level}</p>
                         </div>
                     </div>
                     <div className="profile-progress-area">

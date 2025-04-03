@@ -1,4 +1,4 @@
-// backend/models/User.js
+// backend/models/User.js - Updated with Avatar Support
 const mongoose = require('mongoose');
 
 // Define the User schema
@@ -24,6 +24,13 @@ const UserSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  // New fields for avatar support
+  avatar: {
+    type: String // S3 key for avatar image
+  },
+  avatarUrl: {
+    type: String // Complete S3 URL for avatar image
   }
 });
 

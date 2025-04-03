@@ -29,13 +29,19 @@ const generateUniqueFilename = (file) => {
 };
 
 /**
- * Upload a file to S3 bucket
+ * Upload a file to S3 bucket with folder support
  * @param {Object} file - File object from multer
+ * @param {String} folder - Optional folder path (default: 'uploads')
  * @returns {Promise<Object>} Upload result with key and location
  */
-const uploadFile = async (file) => {
+const uploadFile = async (file, folder = 'uploads') => {
   try {
-    const key = `uploads/${generateUniqueFilename(file)}`;
+    if (!file) {
+      throw new Error('No file provided');
+    }
+
+    // Create folder structure with the provided folder parameter
+    const key = `${folder}/${generateUniqueFilename(file)}`;
     
     const params = {
       Bucket: bucketName,
