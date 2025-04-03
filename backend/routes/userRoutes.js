@@ -1,6 +1,7 @@
 // backend/routes/userRoutes.js
 const express = require('express');
-const { setUsername, getUserProfile, getUserVotes, getUserActivity } = require('../controllers/userController');
+// *** Import uploadAvatar ***
+const { setUsername, getUserProfile, getUserVotes, getUserActivity, uploadAvatar } = require('../controllers/userController');
 const { isAuthenticated, verifyMagicAddress } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validation');
 const { usernameSchema, userProfileSchema } = require('../validations/userValidation');
@@ -56,7 +57,7 @@ router.route('/username')
   .post(
     isAuthenticated,
     verifyMagicAddress('address'),
-    upload, // Process the file upload
+    upload, // Process the file upload - NOTE: setUsername also handles uploads
     handleMulterErrors, // Handle any multer errors
     validate(usernameSchema), // Validate non-file fields
     setUsername
@@ -70,5 +71,16 @@ router.route('/votes/:address')
 
 router.route('/activity/:address')
   .get(validate(userProfileSchema, 'params'), getUserActivity);
+
+// *** ADD THIS ROUTE FOR AVATAR UPLOAD ***
+router.route('/upload-avatar')
+  .post(
+    isAuthenticated,      // Ensure user is logged in
+    upload,               // Process the 'avatar' file field using multer config
+    handleMulterErrors,   // Handle any errors from multer
+    // Note: The 'uploadAvatar' controller itself checks req.user against req.body.address for Magic users
+    uploadAvatar          // Call the controller function
+  );
+// *** END OF ADDED ROUTE ***
 
 module.exports = router;

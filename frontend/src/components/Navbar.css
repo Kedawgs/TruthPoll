@@ -433,10 +433,30 @@
 }
 
 
-/* Dropdown Content Styles */
+/* Style the dropdown header to align items */
 .dropdown-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center; /* Vertically align image and text */
+  padding: 10px 15px; /* Adjust padding as needed */
+  /* Add any existing background, color, etc. */
+}
+
+/* Style the small avatar image within the dropdown header */
+.dropdown-header-avatar {
+  width: 28px;       /* Example size */
+  height: 28px;      /* Example size */
+  border-radius: 50%; /* Make it circular */
+  margin-right: 10px; /* Space between avatar and username/address */
+  object-fit: cover;  /* Cover the area nicely */
+  flex-shrink: 0;     /* Prevent image shrinking if text is long */
+}
+
+/* Optional: ensure the address/username part handles overflow */
+.dropdown-address {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Add existing color, font-size etc. */
 }
 
 .dropdown-address {

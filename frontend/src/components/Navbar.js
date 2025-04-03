@@ -1,20 +1,23 @@
 // src/components/Navbar.js
+// Updated to include avatar in dropdown header
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAppContext } from '../hooks/useAppContext';
+import { useAppContext } from '../hooks/useAppContext'; // Ensure this path is correct
 import './Navbar.css'; // Ensure CSS is imported
-import Sidebar from './Sidebar';
-import fullLogo from '../assets/test123.png'; // UPDATE THIS PATH
-import api from '../utils/api';
+import Sidebar from './Sidebar'; // Assuming Sidebar component exists
+import fullLogo from '../assets/test123.png'; // UPDATE THIS PATH to your actual logo
+import api from '../utils/api'; // Assuming api utility exists
+import { formatAddress } from '../utils/web3Helper'; // Assuming this helper exists
 
 const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Context data
+  // Context data - Ensure all needed values are pulled
   const {
     isConnected, account, isAdmin, logout, openAuthModal,
-    usdtBalance, refreshUSDTBalance, userProfile
+    usdtBalance, refreshUSDTBalance, userProfile, setUserProfile // Include setUserProfile if needed elsewhere in Navbar
   } = useAppContext();
 
   // State
@@ -27,50 +30,44 @@ const Navbar = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
 
-  // Refs for hover logic and closing dropdowns
+  // Refs for hover logic and closing dropdowns/search
   const profileHoverTimerRef = useRef(null);
-  const profileHoverDelayRef = useRef(null); // Optional delay before opening
+  const profileHoverDelayRef = useRef(null);
   const sidebarHoverTimerRef = useRef(null);
   const sidebarHoverDelayRef = useRef(null);
-  const searchInputRef = useRef(null);
+  const searchInputRef = useRef(null); // Ref for the search input container
   const profileContainerRef = useRef(null); // Ref for the profile container area
 
   // --- Hover Logic for Profile Dropdown ---
   const handleProfileMouseEnter = () => {
     if (profileHoverTimerRef.current) clearTimeout(profileHoverTimerRef.current);
-    // Optional: Add a small delay before opening to prevent accidental triggers
     profileHoverDelayRef.current = setTimeout(() => {
-       setShowProfileDropdown(true);
-    }, 150); // Adjust delay as needed (e.g., 150ms)
+        setShowProfileDropdown(true);
+    }, 150); // Delay before opening
   };
 
   const handleProfileMouseLeave = () => {
-     // Clear any pending open delay
-     if (profileHoverDelayRef.current) clearTimeout(profileHoverDelayRef.current);
-     // Set a timer to close the dropdown after a short delay
-     // This allows the user time to move their mouse onto the dropdown itself
-     profileHoverTimerRef.current = setTimeout(() => {
-       setShowProfileDropdown(false);
-     }, 250); // Adjust delay as needed (e.g., 250ms)
+      if (profileHoverDelayRef.current) clearTimeout(profileHoverDelayRef.current);
+      profileHoverTimerRef.current = setTimeout(() => {
+        setShowProfileDropdown(false);
+      }, 250); // Delay before closing
   };
 
   // Keep dropdown open if mouse enters the dropdown itself
   const handleDropdownMouseEnter = () => {
-    // When the mouse enters the dropdown, clear the timer that would close it
     if (profileHoverTimerRef.current) clearTimeout(profileHoverTimerRef.current);
   };
 
   // Close dropdown when mouse leaves the dropdown itself
   const handleDropdownMouseLeave = () => {
-    // Start the timer to close the dropdown when the mouse leaves it
     profileHoverTimerRef.current = setTimeout(() => {
       setShowProfileDropdown(false);
-    }, 250); // Adjust delay as needed
+    }, 250);
   };
   // --- End Hover Logic for Profile Dropdown ---
 
 
-  // --- Hover Logic for Sidebar (Existing) ---
+  // --- Hover Logic for Sidebar (Mobile/Logged Out) ---
   const handleMenuMouseEnter = () => {
     if (sidebarHoverTimerRef.current) clearTimeout(sidebarHoverTimerRef.current);
     sidebarHoverDelayRef.current = setTimeout(() => setSidebarOpen(true), 200);
@@ -105,12 +102,12 @@ const Navbar = () => {
   // Fetch USDT balance effect
   useEffect(() => {
     let intervalId = null;
-    if (isConnected && account) {
+    if (isConnected && account && refreshUSDTBalance) { // Check if function exists
       refreshUSDTBalance();
       intervalId = setInterval(refreshUSDTBalance, 30000); // Poll every 30s
     }
     return () => {
-      if (intervalId) clearInterval(intervalId); // Clear interval on disconnect/unmount
+      if (intervalId) clearInterval(intervalId);
     };
   }, [isConnected, account, refreshUSDTBalance]);
 
@@ -123,6 +120,7 @@ const Navbar = () => {
     if (activeFilter === 'all') {
         setFilteredResults(searchResults);
     } else if (activeFilter === 'active') {
+        // Adjust filter logic based on your Poll object structure
         setFilteredResults(searchResults.filter(p => p.onChain?.isActive === true || p.isActive === true));
     } else if (activeFilter === 'ended') {
         setFilteredResults(searchResults.filter(p => p.onChain?.isActive === false || p.isActive === false));
@@ -132,7 +130,7 @@ const Navbar = () => {
   // Handle search query changes effect (with debounce)
   useEffect(() => {
     let timer = null;
-    const searchPolls = () => {
+    const searchPolls = async () => { // Make async
         if (searchQuery.trim().length < 1) {
             setSearchResults([]);
             setShowSearchDropdown(false);
@@ -159,8 +157,10 @@ const Navbar = () => {
             }
         }, 300); // 300ms debounce
     };
-    searchPolls();
-    // Cleanup function to clear timer if component unmounts or query changes
+
+    searchPolls(); // Call the async function
+
+    // Cleanup function
     return () => {
         if (timer) clearTimeout(timer);
     };
@@ -170,83 +170,89 @@ const Navbar = () => {
   // Click outside to close search dropdown effect
   useEffect(() => {
     const handleClickOutside = (event) => {
-      // Close search dropdown if click is outside search bar/dropdown
       if (searchInputRef.current && !searchInputRef.current.contains(event.target)) {
-        // Check if click is also outside the dropdown itself if it exists
-        const dropdown = searchInputRef.current.querySelector('.search-dropdown');
-        if (!dropdown || !dropdown.contains(event.target)) {
-             setShowSearchDropdown(false);
-        }
+          // Check added: Ensure dropdown is not part of the click target
+          const dropdownElement = searchInputRef.current.querySelector('.search-dropdown');
+          if (!dropdownElement || !dropdownElement.contains(event.target)) {
+               setShowSearchDropdown(false);
+          }
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []); // Dependency array is empty, runs once
+  }, []); // Empty dependency array means this runs once on mount
 
   // --- Helper Functions ---
   const handleLogoClick = () => navigate('/');
   const isActive = (path) => location.pathname === path;
 
+  // Gets initial for the main profile circle in navbar
   const getProfileInitial = () => {
-    if (!account) return '?';
-    if (userProfile && userProfile.username) return userProfile.username.charAt(0).toUpperCase();
-    return account.substring(2, 3).toUpperCase(); // Use char from address
-  };
-
-  const formatAddress = (address) => {
-    if (!address) return '';
-    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
-  };
-
-  const calculateLeadingPercentage = (poll) => {
-    if (!poll?.onChain?.results || !poll.onChain?.totalVotes) return 0;
-    const maxVotes = Math.max(...poll.onChain.results);
-    if (poll.onChain.totalVotes === 0) return 0; // Avoid division by zero
-    return Math.round((maxVotes / poll.onChain.totalVotes) * 100);
-  };
-
-  const getLeadingOption = (poll) => {
-    if (!poll?.onChain?.results || !poll.options || poll.options.length === 0) return '';
-    let maxVotes = -1;
-    let maxIndex = -1;
-    // Handle potential sparse arrays or different lengths (safer loop)
-    for (let i = 0; i < poll.onChain.results.length; i++) {
-        if (poll.onChain.results[i] > maxVotes) {
-            maxVotes = poll.onChain.results[i];
-            maxIndex = i;
-        }
+    if (userProfile && userProfile.username) {
+      return userProfile.username.charAt(0).toUpperCase();
     }
-    return poll.options[maxIndex] || ''; // Return option text or empty string
+    return account ? account.substring(2, 3).toUpperCase() : '?';
+  };
+
+  // Formats address (e.g., 0x123...abcd) - Moved to web3Helper in previous steps, ensure import
+  // const formatAddress = (address) => { ... }; // Make sure this is imported or defined
+
+  // Calculates leading percentage for search results
+  const calculateLeadingPercentage = (poll) => {
+    if (!poll?.onChain?.results || !poll.onChain?.totalVotes || poll.onChain.totalVotes === 0) return 0;
+    const maxVotes = Math.max(0, ...poll.onChain.results.map(v => Number(v) || 0)); // Ensure numbers
+    return Math.round((maxVotes / Number(poll.onChain.totalVotes)) * 100);
+  };
+
+  // Gets leading option text for search results
+  const getLeadingOption = (poll) => {
+     if (!poll?.onChain?.results || !poll.options || poll.options.length === 0) return '';
+     let maxVotes = -1;
+     let maxIndex = -1;
+     poll.onChain.results.forEach((votes, index) => {
+        const numVotes = Number(votes) || 0;
+        if (numVotes > maxVotes) {
+            maxVotes = numVotes;
+            maxIndex = index;
+        }
+     });
+     return poll.options[maxIndex] || '';
   };
 
   const handleSearchChange = (e) => setSearchQuery(e.target.value);
 
+  // Navigate to poll page from search result
   const handlePollSelect = (pollId) => {
     navigate(`/polls/${pollId}`);
     setShowSearchDropdown(false);
     setSearchQuery('');
   };
 
+  // Navigate to search results page on form submit
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
       navigate(`/polls?search=${encodeURIComponent(searchQuery.trim())}`);
       setShowSearchDropdown(false);
+      setSearchQuery(''); // Clear search bar after submitting
     }
   };
 
+  // Handle filter change in search dropdown
   const handleFilterChange = (filter) => setActiveFilter(filter);
 
-  // Close dropdown when clicking an item inside it
+  // Close profile dropdown when clicking an item inside it
   const handleDropdownClick = () => {
-      if (profileHoverTimerRef.current) clearTimeout(profileHoverTimerRef.current); // Clear any closing timer
-      setShowProfileDropdown(false); // Close immediately
+      if (profileHoverTimerRef.current) clearTimeout(profileHoverTimerRef.current);
+      setShowProfileDropdown(false);
   };
 
+  // Handle logout action
   const handleLogout = async () => {
     handleDropdownClick(); // Close dropdown first
-    await logout();
-    // Navigation might be handled by context/app state changes, or add navigate('/') if needed
+    if(logout) await logout(); // Call logout from context
+    // Navigate to home or login page after logout if needed
+    // navigate('/');
   };
 
 
@@ -254,193 +260,222 @@ const Navbar = () => {
   return (
     <>
       <nav className="navbar">
-        {/* Left Section */}
+        {/* Left Section: Logo and Search */}
         <div className="navbar-left">
-          <div className="logo" onClick={handleLogoClick}>
-            <img src={fullLogo} alt="TruthPoll Logo" className="full-logo" />
+          <div className="logo" onClick={handleLogoClick} title="Home">
+            <img src={fullLogo} alt="Logo" className="full-logo" />
           </div>
-          {/* --- Search Bar --- */}
+          {/* Search Bar & Dropdown */}
            <div className="search-bar" ref={searchInputRef}>
              <form onSubmit={handleSearchSubmit}>
                <div className="search-icon">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                </div>
-               <input type="text" placeholder="Search polls" value={searchQuery} onChange={handleSearchChange} />
+               <input
+                 type="text"
+                 placeholder="Search polls"
+                 value={searchQuery}
+                 onChange={handleSearchChange}
+                 onFocus={() => searchQuery.trim().length > 0 && setShowSearchDropdown(true)} // Show dropdown on focus if query exists
+                />
              </form>
-             {/* --- Search Dropdown Render Logic --- */}
-                {showSearchDropdown && searchResults.length > 0 && (
-                   <div className="search-dropdown">
-                     <div className="search-filter-tabs">
-                       <button className={`filter-tab ${activeFilter === "all" ? "active" : ""}`} onClick={() => handleFilterChange("all")}>All</button>
-                       <button className={`filter-tab ${activeFilter === "active" ? "active" : ""}`} onClick={() => handleFilterChange("active")}>Active</button>
-                       <button className={`filter-tab ${activeFilter === "ended" ? "active" : ""}`} onClick={() => handleFilterChange("ended")}>Ended</button>
-                     </div>
-                     {filteredResults.length > 0 ? (
-                       filteredResults.map((poll) => (
-                         <div key={poll._id} className="search-result-item" onClick={() => handlePollSelect(poll._id)}>
-                           <div className="search-result-content">
-                             <div className="search-result-title">{poll.title}</div>
-                             <div className="search-result-category">{poll.category}</div>
-                           </div>
-                           <div className="search-result-percentage">
-                             <span className="percentage-value">{calculateLeadingPercentage(poll)}%</span>
-                             <span className="percentage-label">{getLeadingOption(poll)}</span>
-                           </div>
-                         </div>
-                       ))
-                     ) : ( <div className="search-no-results">No {activeFilter !== "all" ? activeFilter : ""} polls found matching "{searchQuery}"</div> )}
-                     {filteredResults.length > 0 && (
-                       <div className="search-view-all" onClick={() => { navigate(`/polls?search=${encodeURIComponent(searchQuery.trim())}`); setShowSearchDropdown(false); setSearchQuery(""); }}> View all results </div>
-                     )}
-                   </div>
-                )}
-                {showSearchDropdown && searchQuery.trim().length >= 1 && searchResults.length === 0 && !searchLoading && (
-                    <div className="search-dropdown"> <div className="search-no-results">No polls found matching "{searchQuery}"</div> </div>
-                )}
-                {searchLoading && searchQuery.trim().length >= 1 && (
-                    <div className="search-dropdown"> <div className="search-loading"><div className="search-loading-spinner"></div><span>Searching...</span></div> </div>
-                )}
+             {/* Search Dropdown Render Logic */}
+             {showSearchDropdown && (
+                <div className="search-dropdown">
+                    {searchLoading ? (
+                        <div className="search-loading"><div className="search-loading-spinner"></div><span>Searching...</span></div>
+                    ) : searchResults.length === 0 && searchQuery.trim().length >= 1 ? (
+                        <div className="search-no-results">No polls found matching "{searchQuery}"</div>
+                    ) : searchResults.length > 0 ? (
+                        <>
+                            <div className="search-filter-tabs">
+                                <button className={`filter-tab ${activeFilter === "all" ? "active" : ""}`} onClick={() => handleFilterChange("all")}>All</button>
+                                <button className={`filter-tab ${activeFilter === "active" ? "active" : ""}`} onClick={() => handleFilterChange("active")}>Active</button>
+                                <button className={`filter-tab ${activeFilter === "ended" ? "active" : ""}`} onClick={() => handleFilterChange("ended")}>Ended</button>
+                            </div>
+                            {filteredResults.length > 0 ? (
+                                filteredResults.map((poll) => (
+                                <div key={poll._id} className="search-result-item" onClick={() => handlePollSelect(poll._id)}>
+                                    <div className="search-result-content">
+                                    <div className="search-result-title">{poll.title}</div>
+                                    <div className="search-result-category">{poll.category}</div>
+                                    </div>
+                                    <div className="search-result-percentage">
+                                    <span className="percentage-value">{calculateLeadingPercentage(poll)}%</span>
+                                    <span className="percentage-label">{getLeadingOption(poll)}</span>
+                                    </div>
+                                </div>
+                                ))
+                            ) : (
+                                <div className="search-no-results">No {activeFilter !== "all" ? activeFilter : ""} polls found matching "{searchQuery}"</div>
+                            )}
+                            {/* Only show 'View All' if there are results to view */}
+                            {(filteredResults.length > 0 || searchResults.length > 0) && (
+                                <div className="search-view-all" onClick={(e) => { e.preventDefault(); handleSearchSubmit(e); }}>
+                                    View all results for "{searchQuery}"
+                                </div>
+                            )}
+                        </>
+                    ) : null }
+                </div>
+             )}
            </div>
         </div> {/* End navbar-left */}
 
-        {/* Right Section */}
+        {/* Right Section: Nav Items and Auth */}
         <div className="navbar-right">
-          {/* --- Nav Items --- */}
+          {/* Navigation Items */}
           <div className="nav-items">
-             <Link to="/polls" className={`nav-item ${isActive("/polls") ? "active" : ""}`}><div className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"></path></svg></div><span>Polls</span></Link>
-             <Link to="/create-poll" className={`nav-item ${isActive("/create-poll") ? "active" : ""}`}><div className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></div><span>Create</span></Link>
-             <Link to="/leaderboard" className={`nav-item ${isActive("/leaderboard") ? "active" : ""}`}><div className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></svg></div><span>Leaderboard</span></Link>
-             <Link to="/activity" className={`nav-item ${isActive("/activity") ? "active" : ""}`}><div className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></div><span>Activity</span></Link>
+              <Link to="/polls" className={`nav-item ${isActive("/polls") ? "active" : ""}`}><div className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"></path></svg></div><span>Polls</span></Link>
+              <Link to="/create-poll" className={`nav-item ${isActive("/create-poll") ? "active" : ""}`}><div className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></div><span>Create</span></Link>
+              <Link to="/leaderboard" className={`nav-item ${isActive("/leaderboard") ? "active" : ""}`}><div className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></svg></div><span>Leaderboard</span></Link>
+              <Link to="/activity" className={`nav-item ${isActive("/activity") ? "active" : ""}`}><div className="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg></div><span>Activity</span></Link>
           </div>
           <div className="nav-divider"></div>
 
-          {/* --- Auth Section --- */}
+          {/* Authentication Section */}
           <div className="auth-section">
-            {isConnected ? (
+            {isConnected && account ? ( // Check for account as well
+              // Logged In State
               <div className="user-profile">
-                 {/* --- USDT Balance --- */}
-                 <div className="usdt-balance">
-                     <span>{usdtBalance}</span>
-                     <span className="usdt-symbol">USDT</span>
-                 </div>
-                 {/* --- Notification Icon --- */}
-                 <div className="notification-icon">
-                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-                     <span className="notification-badge">2</span> {/* Example badge */}
-                 </div>
+                   {/* USDT Balance */}
+                   {usdtBalance !== null && ( // Conditionally render balance
+                       <div className="usdt-balance" title={`USDT Balance: ${usdtBalance}`}>
+                           <span>{parseFloat(usdtBalance).toFixed(2)}</span> {/* Format to 2 decimals */}
+                           <span className="usdt-symbol">USDT</span>
+                       </div>
+                   )}
+                   {/* Notification Icon (Placeholder) */}
+                   <div className="notification-icon" title="Notifications">
+                       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                       {/* <span className="notification-badge">2</span> Example badge */}
+                   </div>
 
-                {/* --- Profile Area (Container for Hover Logic) --- */}
+                {/* Profile Area (Trigger + Dropdown) */}
                 <div
                     className="profile-container"
-                    ref={profileContainerRef} // Ref for potential future use (e.g., click outside)
-                    onMouseLeave={handleProfileMouseLeave} // Attach leave handler to the container
+                    ref={profileContainerRef}
+                    onMouseLeave={handleProfileMouseLeave}
                 >
-                    {/* --- Clickable Trigger (Circle + Chevron) --- */}
+                    {/* Profile Trigger (Circle + Chevron) */}
                     <div
-                        // Use CSS class OR Tailwind classes below:
-                        // className="profile-trigger" // Your CSS class
-                        className="profile-trigger flex items-center cursor-pointer" // Tailwind classes (ensure Tailwind is configured)
-                        onMouseEnter={handleProfileMouseEnter} // Attach enter handler
+                        className="profile-trigger flex items-center cursor-pointer" // Use Tailwind or your own CSS
+                        onMouseEnter={handleProfileMouseEnter}
+                        title="Profile Menu"
                     >
+                        {/* Profile Circle (Avatar or Initial) */}
                         <div className="profile-circle overflow-hidden">
                             {userProfile && userProfile.avatarUrl ? (
-                                <img 
-                                    src={userProfile.avatarUrl} 
-                                    alt="Profile" 
+                                <img
+                                    src={userProfile.avatarUrl}
+                                    alt="Profile"
                                     className="h-full w-full object-cover"
+                                    onError={(e) => { console.warn('Navbar avatar load error'); e.target.style.display='none'; }} // Hide if fails
                                 />
                             ) : (
                                 <span>{getProfileInitial()}</span>
                             )}
                         </div>
-                        {/* --- Chevron Icon --- */}
+                        {/* Chevron Icon */}
                         <svg
                             xmlns="http://www.w3.org/2000/svg"
-                             // Use CSS class OR Tailwind classes below:
-                            // className={`profile-chevron ${showProfileDropdown ? 'open' : ''}`} // Your CSS class
-                            className="h-4 w-4 ml-1 text-gray-400" // Tailwind classes
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            // Apply rotation dynamically based on state
-                            style={{
-                                transition: 'transform 0.2s ease-in-out',
-                                transform: showProfileDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
-                            }}
+                            className="h-4 w-4 ml-1 text-gray-400 profile-chevron" // Use Tailwind or your own CSS
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                            style={{ transition: 'transform 0.2s', transform: showProfileDropdown ? 'rotate(180deg)' : 'rotate(0deg)' }}
                         >
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
                     </div>
 
                     {/* --- Profile Dropdown Menu --- */}
+                    {/* Uses 'open' class for visibility controlled by CSS */}
                     <div
-                        className={`profile-dropdown ${showProfileDropdown ? 'open' : ''}`} // Add 'open' class based on state for CSS transitions
-                        onMouseEnter={handleDropdownMouseEnter} // Keep open
-                        onMouseLeave={handleDropdownMouseLeave} // Close when leaving dropdown
+                        className={`profile-dropdown ${showProfileDropdown ? 'open' : ''}`}
+                        onMouseEnter={handleDropdownMouseEnter}
+                        onMouseLeave={handleDropdownMouseLeave}
                     >
-                         {/* --- Dropdown Content --- */}
-                         <div className="dropdown-header">
-                             <div className="dropdown-address" title={account || ''}> {/* Add title for full address on hover */}
+                        {/* --- Dropdown Header with Avatar --- */}
+                        <div className="dropdown-header"> {/* Style with display:flex; align-items:center; */}
+                            {/* Conditionally render the avatar image */}
+                            {userProfile?.avatarUrl && (
+                                <img
+                                    src={userProfile.avatarUrl}
+                                    alt="Avatar"
+                                    className="dropdown-header-avatar" // Needs CSS: size, border-radius, margin-right
+                                    onError={(e) => { console.warn('Dropdown avatar load error'); e.target.style.display='none'; }} // Optional
+                                />
+                            )}
+                            {/* Username or Address */}
+                            <div className="dropdown-address" title={account || ''}>
                                 {userProfile?.username || formatAddress(account)}
-                             </div>
-                         </div>
-                         <div className="dropdown-divider"></div>
-                         {/* Links - Use handleDropdownClick to close on navigate */}
-                         <Link to="/profile" className="dropdown-item" onClick={handleDropdownClick}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                            Profile
-                         </Link>
-                         <Link to="/rewards" className="dropdown-item" onClick={handleDropdownClick}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-                            Rewards
-                         </Link>
+                            </div>
+                        </div>
+                        {/* --- End Dropdown Header --- */}
 
-                         {/* --- Admin Section --- */}
-                         {isAdmin === true && (
+                        <div className="dropdown-divider"></div>
+
+                        {/* Dropdown Links */}
+                        <Link to="/profile" className="dropdown-item" onClick={handleDropdownClick}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                          Profile
+                        </Link>
+                        <Link to="/rewards" className="dropdown-item" onClick={handleDropdownClick}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+                          Rewards
+                        </Link>
+
+                        {/* Admin Section (Conditional) */}
+                        {isAdmin === true && (
                              <>
                                  <div className="dropdown-divider"></div>
                                  <div className="dropdown-header">
-                                     {/* You might want a CSS class for this instead of Tailwind */}
+                                     {/* Use appropriate class for styling */}
                                      <div className="text-purple-600 font-medium"> Admin Controls </div>
                                  </div>
                                  <Link to="/admin/dashboard" className="dropdown-item" onClick={handleDropdownClick}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
-                                    Admin Dashboard
+                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                                     Admin Dashboard
                                  </Link>
                                  <Link to="/admin/config" className="dropdown-item" onClick={handleDropdownClick}>
                                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"></path></svg>
                                      Configuration
                                  </Link>
                              </>
-                         )}
-                         {/* --- Logout Button --- */}
-                         <button className="dropdown-item" onClick={handleLogout}>
+                        )}
+                        {/* Logout Button */}
+                        <button className="dropdown-item logout-button" onClick={handleLogout}>
                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
                              Sign Out
-                         </button>
-                    </div>
+                        </button>
+                    </div> {/* End profile-dropdown */}
                 </div> {/* End profile-container */}
 
               </div> // End user-profile
             ) : (
-              <> {/* --- Logged Out Buttons --- */}
+              // Logged Out State
+              <>
                 <button onClick={openAuthModal} className="btn btn-outline"> Login </button>
                 <button onClick={openAuthModal} className="btn btn-primary"> Sign Up </button>
               </>
             )}
           </div> {/* End auth-section */}
 
-          {/* --- Hamburger Menu (Logged Out Only) --- */}
+          {/* Hamburger Menu (Only show when logged out and likely on smaller screens - controlled by CSS) */}
           {!isConnected && (
              <div className="menu-button" onMouseEnter={handleMenuMouseEnter} onMouseLeave={handleMenuMouseLeave}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
              </div>
           )}
         </div> {/* End navbar-right */}
       </nav>
 
-      {/* --- Sidebar --- */}
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} onMouseEnter={handleSidebarMouseEnter} onMouseLeave={handleSidebarMouseLeave} />
+      {/* Sidebar Component */}
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onMouseEnter={handleSidebarMouseEnter}
+        onMouseLeave={handleSidebarMouseLeave}
+      />
     </>
   );
 };

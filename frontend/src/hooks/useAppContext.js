@@ -1,78 +1,46 @@
 // frontend/src/hooks/useAppContext.js
 import { useContext } from 'react';
-import { 
+import {
   AuthContext,
-  ConfigContext, // Add this import
+  ConfigContext,
   WalletContext,
   ContractContext,
   UserProfileContext
-} from '../context/AppContext';
+} from '../context/AppContext'; // Assuming AppContext exports the individual contexts
 
 /**
- * Custom hook to access all contexts in one place
- * This simplifies components that need data from multiple contexts
+ * Custom hook to access all contexts in one place.
+ * This simplifies components that need data from multiple contexts by
+ * consuming each individual context and returning a single combined object.
  */
 export const useAppContext = () => {
+  // Consume each individual context
   const auth = useContext(AuthContext);
-  const config = useContext(ConfigContext); // Add this line
+  const config = useContext(ConfigContext);
   const wallet = useContext(WalletContext);
   const contract = useContext(ContractContext);
-  const userProfile = useContext(UserProfileContext);
-  
-  // Return all context values combined
-  return {
-    // Auth context
-    isConnected: auth.isConnected,
-    account: auth.account,
-    authType: auth.authType,
-    provider: auth.provider,
-    signer: auth.signer,
-    chainId: auth.chainId,
-    isAdmin: auth.isAdmin,
-    authLoading: auth.loading,
-    authError: auth.error,
-    showAuthModal: auth.showAuthModal,
-    openAuthModal: auth.openAuthModal,
-    closeAuthModal: auth.closeAuthModal,
-    connectWallet: auth.connectWallet,
-    loginWithMagic: auth.loginWithMagic,
-    logout: auth.logout,
-    
-    // Config context - Add these lines
-    config: config.config,
-    configLoading: config.loading,
-    configError: config.error,
-    getConfigValue: config.getConfigValue,
-    refreshConfig: config.refreshConfig,
-    
-    // Wallet context
-    smartWalletAddress: wallet.smartWalletAddress,
-    usdtBalance: wallet.usdtBalance,
-    walletLoading: wallet.walletLoading,
-    walletError: wallet.walletError,
-    getSmartWalletAddress: wallet.getSmartWalletAddress,
-    deploySmartWalletIfNeeded: wallet.deploySmartWalletIfNeeded,
-    getUSDTBalance: wallet.getUSDTBalance,
-    refreshUSDTBalance: wallet.refreshUSDTBalance,
-    
-    // Contract context
-    pollLoading: contract.pollLoading,
-    pollError: contract.pollError,
-    createPoll: contract.createPoll,
-    votePoll: contract.votePoll,
-    getPolls: contract.getPolls,
-    getPoll: contract.getPoll,
-    getReceivedRewards: contract.getReceivedRewards,
-    endPoll: contract.endPoll,
-    reactivatePoll: contract.reactivatePoll,
-    
-    // User Profile context
-    userProfile: userProfile.userProfile,
-    needsUsername: userProfile.needsUsername,
-    profileLoading: userProfile.profileLoading,
-    profileError: userProfile.profileError,
-    setUsername: userProfile.setUsername,
-    skipUsernameSetup: userProfile.skipUsernameSetup,
-    generateUsernameFromAddress: userProfile.generateUsernameFromAddress
+  const userProfileData = useContext(UserProfileContext); // Use a distinct variable name here
+
+  // Combine all context values into a single object using spread syntax.
+  // This automatically includes all properties provided by each context's value object.
+  // Ensure there are no major naming conflicts between contexts, or handle them explicitly below.
+  const combinedValue = {
+    ...auth,
+    ...config,
+    ...wallet,
+    ...contract,
+    ...userProfileData // Spreads userProfile, setUserProfile, needsUsername, etc.
   };
+
+  // Optional: You can explicitly override or add properties here if needed
+  // For example, if two contexts provided 'loading' and you wanted specific names:
+  // const combinedValueWithOverrides = {
+  //   ...combinedValue,
+  //   authIsLoading: auth.loading,
+  //   configIsLoading: config.loading,
+  // };
+  // return combinedValueWithOverrides;
+
+  // Return the combined object
+  return combinedValue;
 };
