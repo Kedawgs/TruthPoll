@@ -1,337 +1,313 @@
 // src/pages/Profile.js
+// This code defines the LOOK of the main /profile PAGE, matching the screenshot.
+// It does NOT affect the profile display in the Navbar component.
+
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../hooks/useAppContext';
+import { useNavigate } from 'react-router-dom'; // <<< ADD THIS IMPORT (or add useNavigate to existing import)
 import api from '../utils/api';
-import { formatAddress } from '../utils/web3Helper';
-import './Profile.css';
+import { formatAddress } from '../utils/web3Helper'; // Assuming this formats like 0x123...abcd
+import './Profile.css'; // Import the specific CSS for this page
+
+// --- Placeholder Icon Components (Replace with your actual icons) ---
+// You can use libraries like react-icons or import your own SVG components
+const PlaceholderIcon = ({ className = "w-6 h-6 text-gray-500" }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+);
+// Example styling within the component - you might prefer to style via CSS
+const RewardsIcon = ({ className }) => <div className={`${className} bg-green-100 text-green-600 rounded-full p-1.5 flex items-center justify-center`}><PlaceholderIcon className="w-5 h-5"/></div>;
+const VotesIcon = ({ className }) => <div className={`${className} bg-blue-100 text-blue-600 rounded-full p-1.5 flex items-center justify-center`}><PlaceholderIcon className="w-5 h-5"/></div>;
+const PollsIcon = ({ className }) => <div className={`${className} bg-purple-100 text-purple-600 rounded-full p-1.5 flex items-center justify-center`}><PlaceholderIcon className="w-5 h-5"/></div>;
+const ActivityIcon = ({ className }) => <div className={`${className} p-1`}><PlaceholderIcon className="w-5 h-5" /></div>;
+const MyPollsIcon = ({ className }) => <div className={`${className} p-1`}><PlaceholderIcon className="w-5 h-5" /></div>;
+const ActionIcon = ({ className }) => <div className={`${className} w-4 h-4 text-gray-400`}><PlaceholderIcon className="w-full h-full"/></div>;
+// --- End Placeholder Icons ---
+
 
 const Profile = () => {
-  const { 
-    isConnected, 
-    account, 
-    authType, 
-    userProfile, 
-    usdtBalance,
-    refreshUSDTBalance, 
-    openAuthModal,
-    getReceivedRewards
-  } = useAppContext();
+    const navigate = useNavigate(); // <<< CALL THE HOOK HERE
+    const {
+        isConnected,
+        account,
+        userProfile, // Contains username if set
+        openAuthModal,
+        getReceivedRewards // Assuming this fetches activity/rewards list
+    } = useAppContext();
 
-  // State for profile data
-  const [rewards, setRewards] = useState([]);
-  const [votes, setVotes] = useState(0);
-  const [pollsCreated, setPollsCreated] = useState(0);
-  const [rewardsPaid, setRewardsPaid] = useState(0);
-  const [isEditingUsername, setIsEditingUsername] = useState(false);
-  const [newUsername, setNewUsername] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [error, setError] = useState(null);
+    // State
+    const [activity, setActivity] = useState([]);
+    const [stats, setStats] = useState({ rewards: 0, votes: 0, polls: 0 });
+    const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState('activity'); // 'activity' or 'polls'
+    const [level, setLevel] = useState(1); // Placeholder - fetch actual level
+    const [progress, setProgress] = useState(52); // Placeholder - fetch actual progress
 
-  // Load user profile data when component mounts
-  useEffect(() => {
-    const loadProfileData = async () => {
-      if (!isConnected || !account) {
-        setLoading(false);
-        return;
-      }
+    // Fetch profile data
+    useEffect(() => {
+        const loadProfileData = async () => {
+            if (!isConnected || !account) {
+                setLoading(false);
+                return;
+            }
 
-      try {
-        setLoading(true);
-        setError(null);
+            try {
+                setLoading(true);
+                // Fetch activity/rewards
+                // Assuming getReceivedRewards returns an object like { success: true, data: [...] }
+                const rewardsResponse = await getReceivedRewards();
+                if (rewardsResponse?.success && Array.isArray(rewardsResponse.data)) {
+                    setActivity(rewardsResponse.data);
+                } else {
+                     setActivity([]); // Ensure it's an array
+                }
 
-        // Fetch user's rewards
-        const rewardsData = await getReceivedRewards();
-        setRewards(rewardsData?.data || []);
 
-        // If user has a profile, set the username in the input field
-        if (userProfile?.username) {
-          setNewUsername(userProfile.username);
-        }
+                // --- Fetch User Stats - REPLACE WITH YOUR ACTUAL API LOGIC ---
+                let rewardsEarned = 314; // Default Placeholder
+                if (rewardsResponse?.success && Array.isArray(rewardsResponse.data)) {
+                     // Example calculation if rewards data has amounts
+                     rewardsEarned = rewardsResponse.data.reduce((sum, reward) => sum + (Number(reward.amount) || 0), 0);
+                }
 
-        // Set initial stats (these would ideally come from API)
-        setStatsLoading(true);
-        
-        // Get polls created by this user
-        const pollsResponse = await api.get(`/polls?creator=${account}`);
-        if (pollsResponse.data.success) {
-          setPollsCreated(pollsResponse.data.total || 0);
-        }
+                let votesCount = 224; // Default Placeholder
+                try {
+                    const votesResponse = await api.get(`/users/votes/${account}`);
+                    if (votesResponse?.data?.success) {
+                         votesCount = votesResponse.data.data.totalVotes || 0;
+                    }
+                } catch (voteErr) {
+                     console.warn("Could not fetch precise vote count:", voteErr);
+                     // Use fallback if needed
+                     votesCount = rewardsResponse?.data?.length || 224; // Example fallback
+                }
 
-        // Fetch votes (this is a mock - you'd need to implement this endpoint)
-        try {
-          const votesResponse = await api.get(`/users/votes/${account}`);
-          if (votesResponse.data.success) {
-            setVotes(votesResponse.data.data.totalVotes || 0);
-          }
-        } catch (error) {
-          // If endpoint doesn't exist yet, use the rewards length as a proxy for votes
-          setVotes(rewardsData?.data?.length || 0);
-        }
+                let pollsCreatedCount = 36; // Default Placeholder
+                try {
+                     const pollsResponse = await api.get(`/polls?creator=${account}&limit=1&countOnly=true`); // Check if backend supports countOnly
+                     if (pollsResponse?.data?.success) {
+                         pollsCreatedCount = pollsResponse.data.total || 0;
+                     }
+                 } catch (pollErr) {
+                     console.warn("Could not fetch created poll count:", pollErr);
+                 }
+                 // --- End Stat Fetching Example ---
 
-        // Calculate rewards paid
-        const totalRewardsPaid = rewardsData?.data?.reduce((total, reward) => {
-          return total + (parseFloat(reward.rewardAmount) || 0);
-        }, 0) || 0;
-        
-        setRewardsPaid(totalRewardsPaid.toFixed(2));
-        setStatsLoading(false);
+                setStats({
+                    rewards: rewardsEarned,
+                    votes: votesCount,
+                    polls: pollsCreatedCount
+                });
 
-        // Refresh balance
-        await refreshUSDTBalance();
+                // Fetch Level & Progress if available from API/Context
+                // Example: const profileDetails = await api.get(`/users/profile/${account}`);
+                // setLevel(profileDetails?.data?.level || 1);
+                // setProgress(profileDetails?.data?.progress || 52);
 
-        setLoading(false);
-      } catch (err) {
-        console.error('Error loading profile data:', err);
-        setError(err.message || 'Failed to load profile data');
-        setLoading(false);
-      }
-    };
+                setLoading(false);
+            } catch (err) {
+                console.error('Error loading profile data:', err);
+                // Set placeholders even on error to avoid breaking UI
+                setStats({ rewards: 314, votes: 224, polls: 36 });
+                setActivity([]);
+                setLoading(false);
+            }
+        };
 
-    loadProfileData();
-  }, [isConnected, account, getReceivedRewards, userProfile, refreshUSDTBalance]);
+        loadProfileData();
+    }, [isConnected, account, getReceivedRewards]); // Dependencies for re-fetching
 
-  // Save username
-  const handleSaveUsername = async () => {
-    if (!newUsername.trim()) {
-      setError('Username cannot be empty');
-      return;
-    }
-
-    try {
-      const response = await api.post('/users/username', {
-        username: newUsername.trim(),
-        address: account,
-        isAutoGenerated: false
-      });
-
-      if (response.data.success) {
-        setIsEditingUsername(false);
-        // Refresh page or user data
-        window.location.reload();
-      } else {
-        setError(response.data.error || 'Failed to update username');
-      }
-    } catch (err) {
-      console.error('Error updating username:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to update username');
-    }
-  };
-
-  // If not connected, show a prompt to connect
-  if (!isConnected) {
-    return (
-      <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-        <div className="bg-white shadow rounded-lg p-8 text-center">
-          <h2 className="text-2xl font-bold mb-4">Profile</h2>
-          <p className="mb-6 text-gray-600">Please connect your wallet or sign in to view your profile.</p>
-          <button
-            onClick={openAuthModal}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500"
-          >
-            Connect Wallet
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-      {error && (
-        <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-400 text-red-700 rounded-md">
-          <p className="text-sm">{error}</p>
-        </div>
-      )}
-
-      <div className="bg-white shadow overflow-hidden rounded-lg">
-        {/* Profile Header */}
-        <div className="px-4 py-5 sm:px-6 profile-header">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="profile-avatar">
-                {userProfile?.username ? userProfile.username.charAt(0).toUpperCase() : account.substring(2, 3).toUpperCase()}
-              </div>
-              <div>
-                {isEditingUsername ? (
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      value={newUsername}
-                      onChange={(e) => setNewUsername(e.target.value)}
-                      className="rounded-md border-gray-300 shadow-sm focus:border-cyan-300 focus:ring focus:ring-cyan-200 focus:ring-opacity-50 text-gray-800"
-                      placeholder="Enter username"
-                    />
-                    <button
-                      onClick={handleSaveUsername}
-                      className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsEditingUsername(false);
-                        setNewUsername(userProfile?.username || '');
-                      }}
-                      className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center space-x-2">
-                    <h3 className="text-xl font-bold">
-                      {userProfile?.username || formatAddress(account)}
-                    </h3>
-                    <button
-                      onClick={() => setIsEditingUsername(true)}
-                      className="text-cyan-100 hover:text-white p-1 rounded-full hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                      </svg>
-                    </button>
-                  </div>
-                )}
-                <p className="text-cyan-100 text-sm">
-                  {formatAddress(account)}
-                </p>
-                <p className="text-cyan-100 text-sm">
-                  Connected via {authType === 'magic' ? 'Email (Magic)' : 'Wallet'}
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 md:mt-0 profile-balance-card">
-              <span className="text-xs text-cyan-100 block">Balance</span>
-              <span className="text-xl font-bold">{usdtBalance} USDT</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Statistics Cards */}
-        <div className="px-4 py-5 sm:p-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Statistics</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="profile-stats-card">
-              <div className="profile-stat-label">Votes Cast</div>
-              <div className="profile-stat-value">
-                {statsLoading ? (
-                  <div className="animate-pulse h-6 w-12 bg-gray-200 rounded"></div>
-                ) : (
-                  votes
-                )}
-              </div>
-            </div>
-            <div className="profile-stats-card">
-              <div className="profile-stat-label">Polls Created</div>
-              <div className="profile-stat-value">
-                {statsLoading ? (
-                  <div className="animate-pulse h-6 w-12 bg-gray-200 rounded"></div>
-                ) : (
-                  pollsCreated
-                )}
-              </div>
-            </div>
-            <div className="profile-stats-card">
-              <div className="profile-stat-label">Rewards Received</div>
-              <div className="profile-stat-value">
-                {statsLoading ? (
-                  <div className="animate-pulse h-6 w-12 bg-gray-200 rounded"></div>
-                ) : (
-                  rewards.length
-                )}
-              </div>
-            </div>
-            <div className="profile-stats-card">
-              <div className="profile-stat-label">Rewards Paid (USDT)</div>
-              <div className="profile-stat-value">
-                {statsLoading ? (
-                  <div className="animate-pulse h-6 w-12 bg-gray-200 rounded"></div>
-                ) : (
-                  rewardsPaid
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Activities */}
-        <div className="px-4 py-5 sm:p-6 border-t border-gray-200">
-          <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Recent Rewards</h3>
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-600"></div>
-              <p className="mt-4">Loading rewards...</p>
-            </div>
-          ) : rewards.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="profile-table">
+    // --- Render Functions for Tab Content ---
+    const renderActivityList = () => (
+        <div className="table-container"> {/* Added container for potential overflow */}
+            <table className="activity-table">
                 <thead>
-                  <tr>
-                    <th scope="col">Poll Title</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Reward</th>
-                    <th scope="col">Received</th>
-                  </tr>
+                    <tr>
+                        <th>Action</th>
+                        <th>Details</th>
+                        <th>Time</th>
+                    </tr>
                 </thead>
                 <tbody>
-                  {rewards.map((reward, index) => (
-                    <tr key={index}>
-                      <td className="font-medium text-gray-900">
-                        {reward.pollTitle || 'Unnamed Poll'}
-                      </td>
-                      <td>
-                        <span className={`badge ${reward.hasReceivedReward ? 'badge-success' : 'badge-pending'}`}>
-                          {reward.hasReceivedReward ? 'Claimed' : 'Pending'}
-                        </span>
-                      </td>
-                      <td>
-                        {reward.rewardAmount} USDT
-                      </td>
-                      <td>
-                        {reward.timestamp ? new Date(reward.timestamp).toLocaleDateString() : 'N/A'}
-                      </td>
-                    </tr>
-                  ))}
+                    {!loading && activity.length === 0 && ( // Show only example if not loading and no real data
+                         <>
+                            {/* Example Rows - Remove or conditionalize based on preference */}
+                            <tr><td><span className="action-cell"><ActionIcon /> Vote Placed</span></td><td>Example Poll: Who will win the next election?</td><td>09:24 12/03/2024</td></tr>
+                            <tr><td><span className="action-cell"><ActionIcon /> Poll Created</span></td><td>Example Poll: Market Sentiment on ETH?</td><td>08:15 12/03/2024</td></tr>
+                            <tr><td><span className="action-cell"><ActionIcon /> Payout</span></td><td>Example Poll: Result for Weather Prediction</td><td>14:30 11/03/2024</td></tr>
+                         </>
+                    )}
+                    {activity.map((item, index) => ( // Render real data if available
+                        <tr key={item._id || index}>
+                            {/* Use more specific action types if available */}
+                            <td><span className="action-cell"><ActionIcon /> {item.action || 'Activity'}</span></td>
+                            {/* Make details linkable if desired */}
+                            <td title={item.pollTitle || ''}>{item.pollTitle || 'N/A'}</td>
+                             {/* Format date/time */}
+                            <td>
+                                {item.timestamp ?
+                                    `${new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} ${new Date(item.timestamp).toLocaleDateString()}`
+                                    : 'N/A'
+                                }
+                           </td>
+                        </tr>
+                    ))}
                 </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="profile-empty-state">
-              <svg xmlns="http://www.w3.org/2000/svg" className="profile-empty-icon h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <h3 className="profile-empty-title">No rewards yet</h3>
-              <p className="profile-empty-text">
-                Vote on polls with rewards to earn USDT.
-              </p>
-            </div>
-          )}
+            </table>
         </div>
+    );
 
-        {/* Smart Wallet Section (For non-Magic users) */}
-        {authType !== 'magic' && (
-          <div className="px-4 py-5 sm:p-6 border-t border-gray-200">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Smart Wallet</h3>
-            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-md">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm text-blue-700">
-                    You're using a smart wallet for gasless voting. This wallet relays your transactions through our platform.
-                  </p>
-                </div>
-              </div>
+    const renderPollsList = () => (
+        // --- Replace with your actual Polls List Component ---
+        <div className="polls-list-placeholder">
+             <div className="table-container">
+                 <table className="activity-table">
+                     <thead>
+                         <tr>
+                             <th>Poll Title</th>
+                             <th>Status</th>
+                             <th>Date Created</th>
+                             {/* Add more columns like 'Your Vote', 'Potential Payout' etc. */}
+                         </tr>
+                     </thead>
+                      <tbody>
+                          {/* Map over user's created polls here */}
+                          <tr><td colSpan="3" className="no-data-cell">You haven't created any polls yet.</td></tr>
+                          {/* Example Rows */}
+                          <tr><td>Example Poll 1: Future of AI</td><td>Active</td><td>11/03/2024</td></tr>
+                          <tr><td>Example Poll 2: Crypto Prices</td><td>Ended</td><td>10/03/2024</td></tr>
+                      </tbody>
+                 </table>
+             </div>
+        </div>
+        // --- End Polls List Placeholder ---
+    );
+
+     // Render loading state for the main content area
+     if (loading && isConnected) {
+         // You might want a more styled loading indicator
+         return <div className="profile-container profile-loading">Loading Profile Data...</div>;
+     }
+
+    // Render disconnected state
+    if (!isConnected) {
+        return (
+            <div className="profile-container disconnected-prompt">
+                <h2>Profile</h2>
+                <p>Please connect your wallet to view your profile.</p>
+                <button onClick={openAuthModal} className="btn btn-connect">
+                    Connect Wallet
+                </button>
             </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+        );
+    }
+
+    // --- Render Main Profile Content ---
+    return (
+        // Add overall padding and background in a higher-level container or via body style if needed
+        <div className="profile-page-container"> {/* Use this for overall page padding/background */}
+            <div className="profile-container"> {/* Container for the profile content */}
+                {/* --- Top Header Section --- */}
+                <div className="profile-header">
+                    <div className="profile-info">
+                        {/* Placeholder Avatar - Replace with actual logic */}
+                        <img src={userProfile?.avatarUrl || "/placeholder-avatar.png"} alt="Profile Avatar" className="profile-avatar-img" />
+                        <div className="profile-name-level">
+                            <h1 className="profile-name">{userProfile?.username || formatAddress(account)}</h1>
+                             {/* Show address only if no username, or keep both */}
+                            {!userProfile?.username && (
+                                <p className="profile-address" title={account}>{formatAddress(account)}</p>
+                            )}
+                            <p className="profile-level">Level {level}</p> {/* Use actual level */}
+                        </div>
+                    </div>
+                    <div className="profile-progress-area">
+                         <div className="profile-progress-bar-container">
+                             <div className="profile-progress-bar" style={{ width: `${progress}%` }}></div>
+                         </div>
+                         <span className="profile-progress-percentage">{progress}%</span> {/* Use actual progress */}
+                    </div>
+                    <div className="profile-actions">
+                        {/* Add onClick handlers to navigate or open modals */}
+                        <button className="btn btn-create-poll" onClick={() => navigate('/create-poll')}>Create Poll</button>
+                        <button className="btn btn-profile-settings" onClick={() => navigate('/settings/profile')}>Profile Settings</button>
+                    </div>
+                </div>
+
+                {/* --- Stats Section --- */}
+                <div className="stats-grid">
+                    {/* Rewards Card */}
+                    <div className="stat-card">
+                        <div className="stat-header">
+                            <RewardsIcon className="stat-icon" />
+                            <div className="stat-title-group">
+                                <h3 className="stat-title">Rewards Earned</h3>
+                                <p className="stat-subtitle">Last 7 days</p> {/* Adjust time frame */}
+                            </div>
+                        </div>
+                        <p className="stat-value">${stats.rewards.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                        {/* Placeholder - Add real data/logic */}
+                        <div className="stat-change increase">22% ▲</div>
+                    </div>
+
+                    {/* Votes Card */}
+                    <div className="stat-card">
+                         <div className="stat-header">
+                            <VotesIcon className="stat-icon" />
+                            <div className="stat-title-group">
+                                <h3 className="stat-title">Times Voted</h3>
+                                <p className="stat-subtitle">Last 7 days</p> {/* Adjust time frame */}
+                            </div>
+                        </div>
+                        <p className="stat-value">{stats.votes.toLocaleString()}</p>
+                         {/* Placeholder - Add real data/logic */}
+                         <div className="stat-change decrease">0% ▼</div>
+                    </div>
+
+                    {/* Polls Posted Card */}
+                     <div className="stat-card">
+                         <div className="stat-header">
+                            <PollsIcon className="stat-icon" />
+                            <div className="stat-title-group">
+                                <h3 className="stat-title">Polls Posted</h3>
+                                <p className="stat-subtitle">Lifetime</p> {/* Adjust time frame */}
+                            </div>
+                        </div>
+                        <p className="stat-value">{stats.polls.toLocaleString()}</p>
+                         {/* Placeholder - Add real data/logic */}
+                         <div className="stat-change increase">3% ▲</div>
+                     </div>
+                </div>
+
+                 {/* --- Tabs Section --- */}
+                 <div className="profile-tabs-container">
+                     <div className="profile-tabs">
+                         <button
+                             className={`profile-tab ${activeTab === 'activity' ? 'active' : ''}`}
+                             onClick={() => setActiveTab('activity')}
+                         >
+                             <ActivityIcon className="tab-icon" /> My Activity
+                         </button>
+                         <button
+                             className={`profile-tab ${activeTab === 'polls' ? 'active' : ''}`}
+                             onClick={() => setActiveTab('polls')}
+                         >
+                             <MyPollsIcon className="tab-icon" /> My Polls
+                         </button>
+                     </div>
+                 </div>
+
+                 {/* --- Tab Content Section --- */}
+                  <div className="profile-tab-content">
+                      {loading ? (
+                           <div className="tab-loading">Loading data...</div> // Add a loading state for tab content
+                       ) : (
+                           activeTab === 'activity' ? renderActivityList() : renderPollsList()
+                       )}
+                  </div>
+
+            </div> {/* End profile-container */}
+        </div> // End profile-page-container
+    );
 };
 
 export default Profile;
