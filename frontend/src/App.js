@@ -1,6 +1,5 @@
 // src/App.js
 import React, { useState, useEffect } from 'react';
-// Make sure useParams is imported from react-router-dom
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { useAppContext } from './hooks/useAppContext';
@@ -30,16 +29,14 @@ function PollDetailWrapper() {
 }
 // --- End Helper Wrapper ---
 
-
 function App() {
   const [appSupport, setAppSupport] = useState({
-    localStorage: true,
-    web3: true
+    localStorage: true
   });
   const [appLoading, setAppLoading] = useState(true);
-  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
+    // Check for localStorage support
     const hasLocalStorage = (() => {
       try {
         localStorage.setItem('test', 'test');
@@ -50,16 +47,10 @@ function App() {
       }
     })();
 
-    const hasWeb3 = typeof window !== 'undefined' &&
-                    (typeof window.ethereum !== 'undefined' ||
-                     typeof window.web3 !== 'undefined');
-
     setAppSupport({
-      localStorage: hasLocalStorage,
-      web3: hasWeb3
+      localStorage: hasLocalStorage
     });
 
-    setIsInitialized(true);
     setAppLoading(false);
   }, []);
 
@@ -71,26 +62,17 @@ function App() {
     );
   }
 
-  if (!appSupport.localStorage || !appSupport.web3) {
+  if (!appSupport.localStorage) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="max-w-md w-full p-6 bg-white rounded-lg shadow-md">
           <h2 className="text-2xl font-bold mb-4 text-center">Browser Compatibility Issue</h2>
-          <div className="space-y-4">
-            {!appSupport.localStorage && (
-              <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700">
-                <p>Your browser doesn't support local storage, which is required for this application.</p>
-              </div>
-            )}
-            {!appSupport.web3 && (
-              <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700">
-                <p>Your browser doesn't have Web3 capabilities, which are required for blockchain interactions.</p>
-              </div>
-            )}
-            <p className="text-center mt-4">
-              Please try using a modern browser like Chrome, Firefox, or Brave.
-            </p>
+          <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700">
+            <p>Your browser doesn't support local storage, which is required for this application to function properly.</p>
           </div>
+          <p className="text-center mt-4">
+            Please try using a modern browser like Chrome, Firefox, or Brave. You can also try disabling private browsing mode.
+          </p>
         </div>
       </div>
     );
