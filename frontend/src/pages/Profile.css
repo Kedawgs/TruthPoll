@@ -1,0 +1,146 @@
+/* src/pages/Profile.css */
+.profile-header {
+    background: linear-gradient(to right, #0ea5e9, #0284c7);
+    color: white;
+    border-radius: 0.5rem 0.5rem 0 0;
+  }
+  
+  .profile-avatar {
+    width: 4rem;
+    height: 4rem;
+    background-color: white;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #0284c7;
+    text-transform: uppercase;
+  }
+  
+  .profile-stats-card {
+    background-color: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .profile-stats-card:hover {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    transform: translateY(-2px);
+  }
+  
+  .profile-stat-label {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-bottom: 0.25rem;
+  }
+  
+  .profile-stat-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #111827;
+  }
+  
+  .profile-balance-card {
+    background-color: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(4px);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+  }
+  
+  .profile-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  
+  .profile-table th {
+    background-color: #f3f4f6;
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #4b5563;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  
+  .profile-table th:first-child {
+    border-top-left-radius: 0.5rem;
+  }
+  
+  .profile-table th:last-child {
+    border-top-right-radius: 0.5rem;
+  }
+  
+  .profile-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  
+  .profile-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  
+  .profile-table tbody tr:last-child td:first-child {
+    border-bottom-left-radius: 0.5rem;
+  }
+  
+  .profile-table tbody tr:last-child td:last-child {
+    border-bottom-right-radius: 0.5rem;
+  }
+  
+  .profile-table tbody tr:hover {
+    background-color: #f9fafb;
+  }
+  
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+  
+  .badge-success {
+    background-color: #d1fae5;
+    color: #065f46;
+  }
+  
+  .badge-pending {
+    background-color: #fee2e2;
+    color: #991b1b;
+  }
+  
+  .profile-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1.5rem;
+    background-color: #f9fafb;
+    border-radius: 0.5rem;
+    text-align: center;
+  }
+  
+  .profile-empty-icon {
+    color: #9ca3af;
+    margin-bottom: 1rem;
+  }
+  
+  .profile-empty-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #111827;
+    margin-bottom: 0.5rem;
+  }
+  
+  .profile-empty-text {
+    font-size: 0.875rem;
+    color: #6b7280;
+  }

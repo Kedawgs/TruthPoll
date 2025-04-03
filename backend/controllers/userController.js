@@ -1,5 +1,6 @@
 // backend/controllers/userController.js
 const User = require('../models/User');
+const Poll = require('../models/Poll');
 const logger = require('../utils/logger');
 const { NotFoundError } = require('../utils/errorTypes');
 
@@ -118,6 +119,168 @@ exports.getUserProfile = async (req, res) => {
     });
   } catch (error) {
     logger.error(`Error getting user profile: ${error.message}`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Server Error'
+    });
+  }
+};
+
+/**
+ * @desc    Get user votes count
+ * @route   GET /api/users/votes/:address
+ * @access  Public
+ */
+exports.getUserVotes = async (req, res) => {
+  try {
+    // Address is validated and normalized to lowercase by middleware
+    const address = req.params.address;
+    
+    // This is a placeholder implementation - in a real scenario, you'd query the blockchain
+    // or maintain a votes collection to track votes per user
+    
+    // For now, we'll count the number of polls where this user has voted
+    // by checking the received rewards as a proxy
+    const contractService = req.app.locals.contractService;
+    
+    // Default response (fallback)
+    let totalVotes = 0;
+    
+    // If we have contractService properly initialized
+    if (contractService) {
+      try {
+        // Get all polls
+        const pollAddresses = await contractService.getAllPolls();
+        
+        // Check each poll if the user has voted
+        let votedCount = 0;
+        await Promise.all(
+          pollAddresses.map(async (pollAddress) => {
+            try {
+              const hasVoted = await contractService.hasUserVoted(pollAddress, address);
+              if (hasVoted) {
+                votedCount++;
+              }
+            } catch (error) {
+              logger.debug(`Error checking if user ${address} has voted on ${pollAddress}: ${error.message}`);
+              // Continue to next poll despite error
+            }
+          })
+        );
+        
+        totalVotes = votedCount;
+      } catch (error) {
+        logger.error(`Error fetching user votes from blockchain: ${error.message}`);
+        // Continue with default response
+      }
+    }
+    
+    // Get polls locally from database where this user is marked as having voted
+    try {
+      const localPolls = await Poll.find({ 
+        "votes.voter": address 
+      });
+      
+      if (localPolls && localPolls.length > 0) {
+        // If we found some local votes, use the larger count between
+        // blockchain and local database
+        totalVotes = Math.max(totalVotes, localPolls.length);
+      }
+    } catch (dbError) {
+      logger.error(`Error fetching local votes: ${dbError.message}`);
+      // Continue with blockchain count
+    }
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        address,
+        totalVotes
+      }
+    });
+  } catch (error) {
+    logger.error(`Error getting user votes: ${error.message}`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Server Error'
+    });
+  }
+};
+
+/**
+ * @desc    Get user activity summary - polls created, votes cast, rewards
+ * @route   GET /api/users/activity/:address
+ * @access  Public
+ */
+exports.getUserActivity = async (req, res) => {
+  try {
+    // Address is validated and normalized to lowercase by middleware
+    const address = req.params.address;
+    
+    // Get user profile
+    const user = await User.findOne({ address });
+    
+    // Define response shape
+    const activity = {
+      address,
+      userExists: !!user,
+      username: user ? user.username : null,
+      pollsCreated: 0,
+      votesCount: 0,
+      rewards: [],
+      totalRewardsAmount: 0
+    };
+    
+    // Count polls created by this user
+    const pollsCreatedCount = await Poll.countDocuments({ creator: address });
+    activity.pollsCreated = pollsCreatedCount;
+    
+    // Get votes count using existing method
+    try {
+      const votesData = await this.getUserVotes({ params: { address } }, { 
+        status: () => ({ 
+          json: (data) => data 
+        }) 
+      });
+      
+      if (votesData.success) {
+        activity.votesCount = votesData.data.totalVotes;
+      }
+    } catch (votesError) {
+      logger.error(`Error getting votes count: ${votesError.message}`);
+      // Continue with other activity data
+    }
+    
+    // Get rewards information
+    const contractService = req.app.locals.contractService;
+    const pollService = req.app.locals.pollService;
+    
+    if (pollService) {
+      try {
+        const rewardsData = await pollService.getReceivedRewards(address);
+        
+        if (rewardsData && rewardsData.length > 0) {
+          // Calculate total rewards amount
+          const totalRewards = rewardsData.reduce((total, reward) => {
+            const rewardAmount = parseFloat(reward.rewardAmount) || 0;
+            return total + rewardAmount;
+          }, 0);
+          
+          activity.totalRewardsAmount = parseFloat(totalRewards.toFixed(2));
+          activity.rewards = rewardsData;
+        }
+      } catch (rewardsError) {
+        logger.error(`Error getting rewards for ${address}: ${rewardsError.message}`);
+        // Continue with other activity data
+      }
+    }
+    
+    res.status(200).json({
+      success: true,
+      data: activity
+    });
+  } catch (error) {
+    logger.error(`Error getting user activity: ${error.message}`, error);
     res.status(500).json({
       success: false,
       error: error.message || 'Server Error'

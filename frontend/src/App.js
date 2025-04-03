@@ -19,6 +19,7 @@ import AuthModal from './components/AuthModal';
 import UsernameModal from './components/UsernameModal';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminConfig from './pages/AdminConfig';
+import Profile from './pages/Profile';
 
 // --- Helper Wrapper Component for PollDetail ---
 // This component gets the 'id' and passes it as a 'key' to PollDetail
@@ -168,6 +169,15 @@ function AppContent() {
                 <AdminRoute>
                   <AdminConfig />
                 </AdminRoute>
+              </ProtectedRoute>
+            }
+          />
+          
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
               </ProtectedRoute>
             }
           />
