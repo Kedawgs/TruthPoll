@@ -1,5 +1,5 @@
 // src/context/WalletContext.js
-import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { ethers } from 'ethers';
 import { AuthContext } from './AuthContext';
 import api from '../utils/api';
@@ -20,98 +20,422 @@ export const WalletProvider = ({ children }) => {
   const [walletError, setWalletError] = useState(null);
   const [walletData, setWalletData] = useState(null); // Store complete wallet data
   
+  // WebSocket state with refs to prevent update loops
+  const [wsConnected, setWsConnected] = useState(false);
+  const [wsSubscriptionActive, setWsSubscriptionActive] = useState(false);
+  const wsProviderRef = useRef(null);
+  const wsSubscriptionIdRef = useRef(null);
+  const wsConnectionTimeoutRef = useRef(null);
+  const wsReconnectTimeoutRef = useRef(null);
+  const wsHeartbeatIntervalRef = useRef(null);
+  const fallbackPollingIntervalRef = useRef(null);
+  const lastBalanceRef = useRef("0.00");
+  
   // USDT token address
   const [usdtAddress] = useState(process.env.REACT_APP_USDT_ADDRESS);
   
-  // First define all callback functions BEFORE using them in useEffect
+  // WebSocket URL from environment
+  const wsUrlRef = useRef(process.env.REACT_APP_POLYGON_AMOY_WS_URL);
+  
+  // IMPORTANT: Define functions in order of dependencies
+  // First define functions that don't depend on other functions
+  
+  // Check balance via standard provider (HTTP RPC)
+  const checkBalanceViaProvider = useCallback(async () => {
+    try {
+      // Skip if not connected or no provider
+      if (!isConnected || !provider) {
+        return;
+      }
+      
+      const walletToCheck = authType === 'magic' 
+        ? account
+        : smartWalletAddress;
+        
+      if (!walletToCheck || !usdtAddress) {
+        return;
+      }
+      
+      logger.info(`Checking balance for wallet: ${walletToCheck}`);
+      
+      // ABI for token contract
+      const tokenAbi = [
+        "function balanceOf(address owner) view returns (uint256)",
+        "function decimals() view returns (uint8)"
+      ];
+      
+      // Create contract interface
+      const tokenContract = new ethers.Contract(
+        usdtAddress,
+        tokenAbi,
+        provider
+      );
+      
+      // Get decimals
+      let decimals = 6; // Default for USDT
+      try {
+        const tokenDecimals = await tokenContract.decimals();
+        decimals = tokenDecimals.toNumber ? tokenDecimals.toNumber() : Number(tokenDecimals);
+      } catch (decimalError) {
+        logger.debug('Error getting decimals, using default (6):', decimalError.message);
+      }
+      
+      // Get balance
+      const balance = await tokenContract.balanceOf(walletToCheck);
+      const formattedBalance = parseFloat(ethers.utils.formatUnits(balance, decimals)).toFixed(2);
+      
+      logger.info(`Current balance: ${formattedBalance}`);
+      
+      // Only update if balance has changed
+      if (formattedBalance !== lastBalanceRef.current) {
+        logger.info(`Balance changed: ${lastBalanceRef.current} -> ${formattedBalance}`);
+        lastBalanceRef.current = formattedBalance;
+        setUsdtBalance(formattedBalance);
+      }
+      
+      return formattedBalance;
+    } catch (error) {
+      logger.error('Error checking balance via provider:', error);
+      return null;
+    }
+  }, [isConnected, provider, authType, account, smartWalletAddress, usdtAddress]);
   
   // Get USDT balance - works for both Magic and wallet users
   const getUSDTBalance = useCallback(async () => {
-    try {
-      // For Magic users, use their Ethereum address directly
-      // For wallet users, use the smart wallet address
-      const walletToCheck = authType === 'magic' 
-        ? account  // Magic user's address
-        : smartWalletAddress;  // Smart wallet for non-Magic users
-      
-      // Log which wallet we're checking
-      if (authType === 'magic') {
-        logger.info(`Checking balance for Magic user: ${walletToCheck}`);
-      } else {
-        if (!walletToCheck) {
-          logger.info("Smart wallet not available yet");
-          return "0.00";  // Early return for wallet users without smart wallet
-        }
-        logger.info(`Checking balance for smart wallet: ${walletToCheck}`);
-      }
-      
-      // If we have a provider and wallet address, try to get the balance
-      if (provider && walletToCheck) {
-        try {
-          const testnetUsdtAddress = usdtAddress;
-          logger.info(`Using token address: ${testnetUsdtAddress}`);
-          
-          // Use a simplified token ABI with just balanceOf
-          const tokenAbi = [
-            "function balanceOf(address owner) view returns (uint256)",
-            "function decimals() view returns (uint8)"
-          ];
-          
-          const tokenContract = new ethers.Contract(
-            testnetUsdtAddress, 
-            tokenAbi, 
-            provider
-          );
-          
-          // Try to get decimals, default to 6 for USDT
-          let decimals = 6;
-          try {
-            const tokenDecimals = await tokenContract.decimals();
-            decimals = tokenDecimals;
-            logger.info(`Token decimals: ${decimals}`);
-          } catch (decimalError) {
-            logger.info("Could not get token decimals, using default (6)");
-          }
-          
-          // Get balance
-          const balance = await tokenContract.balanceOf(walletToCheck);
-          logger.info(`Raw balance: ${balance.toString()}`);
-          
-          // Format balance with decimals
-          const formattedBalance = parseFloat(ethers.utils.formatUnits(balance, decimals)).toFixed(2);
-          logger.info(`Formatted balance: ${formattedBalance}`);
-          
-          return formattedBalance;
-        } catch (error) {
-          logger.error("Error getting token balance from blockchain:", error);
-          // For development, return mock balance
-          if (process.env.NODE_ENV === 'development') {
-            logger.info("Using mock balance during development");
-            return "100.00";  // Mock balance for development
-          }
-          return "0.00";
-        }
-      }
-      
-      // Fallback if no provider or wallet
-      return "0.00";
-    } catch (error) {
-      logger.error("Error in getUSDTBalance:", error);
-      return "0.00";
-    }
-  }, [account, authType, provider, smartWalletAddress, usdtAddress]);
+    return await checkBalanceViaProvider();
+  }, [checkBalanceViaProvider]);
   
   // Refresh USDT balance
   const refreshUSDTBalance = useCallback(async () => {
     if (isConnected) {
-      const balance = await getUSDTBalance();
-      setUsdtBalance(balance);
-      return balance;
+      const balance = await checkBalanceViaProvider();
+      if (balance) {
+        return balance;
+      }
     }
     return "0.00";
-  }, [isConnected, getUSDTBalance]);
+  }, [isConnected, checkBalanceViaProvider]);
   
-  // Get smart wallet address from the backend - optimized to store complete data
+  // Set up fallback polling for balance updates
+  const setupFallbackPolling = useCallback(() => {
+    // Clear any existing polling
+    if (fallbackPollingIntervalRef.current) {
+      clearInterval(fallbackPollingIntervalRef.current);
+      fallbackPollingIntervalRef.current = null;
+    }
+    
+    logger.info('Setting up fallback balance polling');
+    
+    // Set up polling interval
+    fallbackPollingIntervalRef.current = setInterval(() => {
+      if (isConnected) {
+        checkBalanceViaProvider();
+      } else {
+        // Stop polling if disconnected
+        clearInterval(fallbackPollingIntervalRef.current);
+        fallbackPollingIntervalRef.current = null;
+      }
+    }, 30000); // 30-second polling interval
+    
+    // Do an immediate check
+    checkBalanceViaProvider();
+  }, [isConnected, checkBalanceViaProvider]);
+  
+  // Handle log notification
+  const handleLogNotification = useCallback(async (logData) => {
+    try {
+      if (!logData || !logData.topics || logData.topics.length < 3) {
+        return;
+      }
+      
+      // Check if this is a Transfer event by checking the first topic (event signature)
+      const transferEventSignature = ethers.utils.id('Transfer(address,address,uint256)');
+      if (logData.topics[0] !== transferEventSignature) {
+        return;
+      }
+      
+      // Decode the from and to addresses from the topics
+      const fromAddress = ethers.utils.defaultAbiCoder.decode(['address'], logData.topics[1])[0].toLowerCase();
+      const toAddress = ethers.utils.defaultAbiCoder.decode(['address'], logData.topics[2])[0].toLowerCase();
+      
+      // Get our wallet address based on auth type
+      const walletAddress = (authType === 'magic' ? account : smartWalletAddress).toLowerCase();
+      
+      // Check if our wallet is involved in this transfer
+      if (fromAddress === walletAddress || toAddress === walletAddress) {
+        logger.info(`Transfer event detected: ${fromAddress === walletAddress ? 'outgoing' : 'incoming'}`);
+        
+        // Check balance after a short delay to ensure blockchain state is updated
+        setTimeout(() => {
+          checkBalanceViaProvider();
+        }, 2000);
+      }
+    } catch (error) {
+      logger.error('Error handling log notification:', error);
+    }
+  }, [account, authType, smartWalletAddress, checkBalanceViaProvider]);
+  
+  // Set up heartbeat to keep connection alive
+  const setupHeartbeat = useCallback(() => {
+    // Clear any existing heartbeat
+    if (wsHeartbeatIntervalRef.current) {
+      clearInterval(wsHeartbeatIntervalRef.current);
+    }
+    
+    logger.info('Setting up WebSocket heartbeat');
+    
+    // Set up heartbeat interval
+    wsHeartbeatIntervalRef.current = setInterval(() => {
+      if (wsProviderRef.current && wsProviderRef.current.readyState === WebSocket.OPEN) {
+        try {
+          // Send a simple ping message
+          wsProviderRef.current.send(JSON.stringify({
+            jsonrpc: '2.0',
+            id: Date.now(),
+            method: 'net_version',
+            params: []
+          }));
+          
+          logger.debug('Sent WebSocket heartbeat');
+        } catch (error) {
+          logger.warn('Error sending WebSocket heartbeat:', error);
+        }
+      } else {
+        // WebSocket is not connected, clear interval
+        clearInterval(wsHeartbeatIntervalRef.current);
+        wsHeartbeatIntervalRef.current = null;
+      }
+    }, 30000); // 30-second heartbeat
+  }, []);
+  
+  // Clean up WebSocket resources
+  const cleanupWebSocket = useCallback(() => {
+    logger.info('Cleaning up WebSocket resources');
+    
+    // Clear timeouts and intervals
+    if (wsConnectionTimeoutRef.current) {
+      clearTimeout(wsConnectionTimeoutRef.current);
+      wsConnectionTimeoutRef.current = null;
+    }
+    
+    if (wsReconnectTimeoutRef.current) {
+      clearTimeout(wsReconnectTimeoutRef.current);
+      wsReconnectTimeoutRef.current = null;
+    }
+    
+    if (wsHeartbeatIntervalRef.current) {
+      clearInterval(wsHeartbeatIntervalRef.current);
+      wsHeartbeatIntervalRef.current = null;
+    }
+    
+    if (fallbackPollingIntervalRef.current) {
+      clearInterval(fallbackPollingIntervalRef.current);
+      fallbackPollingIntervalRef.current = null;
+    }
+    
+    // Close WebSocket connection
+    if (wsProviderRef.current && wsProviderRef.current.readyState === WebSocket.OPEN) {
+      try {
+        logger.info('Closing WebSocket connection');
+        
+        // Remove event handlers to prevent state updates during cleanup
+        wsProviderRef.current.onclose = null;
+        wsProviderRef.current.onerror = null;
+        wsProviderRef.current.onopen = null;
+        wsProviderRef.current.onmessage = null;
+        
+        // Close connection
+        wsProviderRef.current.close();
+      } catch (error) {
+        logger.error('Error closing WebSocket:', error);
+      }
+    }
+    
+    // Reset provider and subscription refs
+    wsProviderRef.current = null;
+    wsSubscriptionIdRef.current = null;
+    
+    // Update connection state
+    setWsConnected(false);
+    setWsSubscriptionActive(false);
+  }, []);
+  
+  // Subscribe to logs via eth_subscribe - define BEFORE initWebSocketConnection
+  const subscribeToDRPCLogs = useCallback(() => {
+    if (!wsProviderRef.current || wsProviderRef.current.readyState !== WebSocket.OPEN) {
+      logger.info('Cannot subscribe to logs - WebSocket not connected');
+      return;
+    }
+    
+    if (!usdtAddress) {
+      logger.info('Cannot subscribe to logs - Missing token address');
+      return;
+    }
+    
+    // Get the correct wallet address based on auth type
+    const walletToWatch = authType === 'magic' 
+      ? account
+      : smartWalletAddress;
+      
+    if (!walletToWatch) {
+      logger.info('Cannot subscribe to logs - Missing wallet address');
+      return;
+    }
+    
+    try {
+      logger.info(`Setting up logs subscription for ${authType} wallet: ${walletToWatch}`);
+      
+      // Create a subscription request for logs related to our token contract and wallet
+      // This specifically looks for token transfers to or from our wallet
+      const subscriptionId = Date.now();
+      wsSubscriptionIdRef.current = subscriptionId;
+      
+      // Create a filter for Transfer events involving our wallet
+      const subscriptionRequest = {
+        jsonrpc: '2.0',
+        id: subscriptionId,
+        method: 'eth_subscribe',
+        params: [
+          'logs',
+          {
+            address: usdtAddress,
+            topics: [
+              ethers.utils.id('Transfer(address,address,uint256)'), // Transfer event signature
+              null, // From address (any)
+              null  // To address (any)
+            ]
+          }
+        ]
+      };
+      
+      // Send the subscription request
+      wsProviderRef.current.send(JSON.stringify(subscriptionRequest));
+      
+      logger.info('Sent logs subscription request');
+    } catch (error) {
+      logger.error('Error subscribing to logs:', error);
+      setWsSubscriptionActive(false);
+      
+      // Set up fallback polling
+      setupFallbackPolling();
+    }
+  }, [smartWalletAddress, usdtAddress, account, authType, setupFallbackPolling]);
+  
+  // Initialize WebSocket connection - AFTER subscribeToDRPCLogs is defined
+  const initWebSocketConnection = useCallback(() => {
+    // Skip if we already have a connection, no URL, or not connected
+    if (wsProviderRef.current || !wsUrlRef.current || !isConnected) {
+      return;
+    }
+    
+    try {
+      logger.info(`Initializing WebSocket connection to: ${wsUrlRef.current}`);
+      
+      // Create a raw WebSocket connection instead of ethers provider
+      // This gives more direct control over the connection
+      const ws = new WebSocket(wsUrlRef.current);
+      
+      // Store reference
+      wsProviderRef.current = ws;
+      
+      // Set up connection timeout
+      wsConnectionTimeoutRef.current = setTimeout(() => {
+        if (!wsConnected) {
+          logger.error('WebSocket connection timeout');
+          cleanupWebSocket();
+          
+          // Try to reconnect after 5 seconds
+          wsReconnectTimeoutRef.current = setTimeout(() => {
+            if (isConnected) {
+              initWebSocketConnection();
+            }
+          }, 5000);
+        }
+      }, 15000); // 15 second connection timeout
+      
+      // Set up handlers
+      ws.onopen = () => {
+        logger.info('WebSocket connection established');
+        
+        // Clear connection timeout
+        if (wsConnectionTimeoutRef.current) {
+          clearTimeout(wsConnectionTimeoutRef.current);
+          wsConnectionTimeoutRef.current = null;
+        }
+        
+        // Update connection state
+        setWsConnected(true);
+        
+        // Setup heartbeat
+        setupHeartbeat();
+        
+        // Subscribe to logs for the token contract (if wallet address is available)
+        if ((authType === 'magic' && account) || (authType === 'wallet' && smartWalletAddress)) {
+          logger.info(`WebSocket connected and wallet available (type: ${authType}) - setting up subscription`);
+          subscribeToDRPCLogs();
+        }
+      };
+      
+      ws.onclose = (event) => {
+        logger.warn(`WebSocket connection closed: ${event.code} - ${event.reason || 'No reason provided'}`);
+        
+        // Cleanup resources
+        cleanupWebSocket();
+        
+        // Try to reconnect after a delay if still connected to wallet
+        if (isConnected) {
+          wsReconnectTimeoutRef.current = setTimeout(() => {
+            initWebSocketConnection();
+          }, 5000); // 5 second reconnection delay
+        }
+      };
+      
+      ws.onerror = (error) => {
+        logger.error('WebSocket error:', error);
+        // Will trigger onclose event, which handles reconnection
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          // Parse the message data
+          const data = JSON.parse(event.data);
+          
+          // Handle different message types
+          if (data.id && wsSubscriptionIdRef.current === data.id) {
+            // This is a response to our subscription request
+            if (data.result) {
+              logger.info(`Subscription confirmed, ID: ${data.result}`);
+              wsSubscriptionIdRef.current = data.result;
+              setWsSubscriptionActive(true);
+            } else if (data.error) {
+              logger.error(`Subscription error: ${data.error.message}`);
+              setWsSubscriptionActive(false);
+            }
+          } else if (data.params && data.params.subscription === wsSubscriptionIdRef.current) {
+            // This is a subscription notification
+            logger.info('Received subscription notification');
+            handleLogNotification(data.params.result);
+          }
+        } catch (error) {
+          logger.error('Error processing WebSocket message:', error);
+        }
+      };
+    } catch (error) {
+      logger.error('Error initializing WebSocket connection:', error);
+      cleanupWebSocket();
+    }
+  }, [
+    isConnected, 
+    cleanupWebSocket, 
+    smartWalletAddress, 
+    account, 
+    authType, 
+    setupHeartbeat, 
+    subscribeToDRPCLogs, 
+    handleLogNotification
+  ]);
+  
+  // Get smart wallet address from the backend
   const getSmartWalletAddress = useCallback(async (userAddress) => {
     try {
       setWalletLoading(true);
@@ -146,7 +470,7 @@ export const WalletProvider = ({ children }) => {
     }
   }, [authType]);
   
-  // Deploy smart wallet if needed - IMPROVED to use stored wallet data
+  // Deploy smart wallet if needed
   const deploySmartWalletIfNeeded = useCallback(async () => {
     try {
       setWalletLoading(true);
@@ -158,7 +482,7 @@ export const WalletProvider = ({ children }) => {
         return null;
       }
       
-      // Check authentication status using only isConnected from AuthContext
+      // Check authentication status
       if (!isConnected) {
         logger.warn("Authentication required for wallet deployment");
         setWalletError("Authentication required. Please sign in first.");
@@ -295,7 +619,30 @@ export const WalletProvider = ({ children }) => {
     }
   }, [isConnected, authType, provider]);
   
-  // NOW we can use these functions in useEffect
+  // Initialize WebSocket connection when auth state changes
+  useEffect(() => {
+    if (isConnected && account) {
+      initWebSocketConnection();
+    } else {
+      cleanupWebSocket();
+    }
+    
+    return () => {
+      cleanupWebSocket();
+    };
+  }, [isConnected, account, initWebSocketConnection, cleanupWebSocket]);
+  
+  // Subscribe to logs when any wallet address becomes available
+  useEffect(() => {
+    if (wsConnected && isConnected) {
+      // For Magic wallets, we use the account directly
+      // For Web3 wallets, we wait for smartWalletAddress
+      if ((authType === 'magic' && account) || (authType === 'wallet' && smartWalletAddress)) {
+        logger.info(`WebSocket active and wallet available (type: ${authType}) - setting up subscription`);
+        subscribeToDRPCLogs();
+      }
+    }
+  }, [wsConnected, isConnected, smartWalletAddress, account, authType, subscribeToDRPCLogs]);
   
   // Listen for logout events
   useEffect(() => {
@@ -308,6 +655,9 @@ export const WalletProvider = ({ children }) => {
       setWalletLoading(false);
       setWalletError(null);
       setWalletData(null);
+      
+      // Clean up WebSocket
+      cleanupWebSocket();
     };
     
     window.addEventListener('auth:logout', handleLogout);
@@ -315,7 +665,7 @@ export const WalletProvider = ({ children }) => {
     return () => {
       window.removeEventListener('auth:logout', handleLogout);
     };
-  }, []);
+  }, [cleanupWebSocket]);
   
   // Listen for wallet authentication required events
   useEffect(() => {
@@ -344,15 +694,39 @@ export const WalletProvider = ({ children }) => {
         getSmartWalletAddress(account);
       }
       
-      // Get USDT balance for any connected user
-      refreshUSDTBalance();
+      // Get initial USDT balance if WebSocket is not active
+      if (!wsSubscriptionActive) {
+        refreshUSDTBalance();
+      }
     } else {
       // Reset wallet state when disconnected
       setSmartWalletAddress(null);
       setIsSmartWalletDeployed(false);
       setWalletData(null);
     }
-  }, [isConnected, account, authType, getSmartWalletAddress, refreshUSDTBalance]);
+  }, [isConnected, account, authType, getSmartWalletAddress, refreshUSDTBalance, wsSubscriptionActive]);
+  
+  // Set up fallback polling if WebSocket subscription fails
+  useEffect(() => {
+    // Check if we should be using fallback polling
+    const shouldUseFallback = isConnected && 
+      // For Magic users, check account. For Web3 users, check smart wallet
+      ((authType === 'magic' && account) || (authType === 'wallet' && smartWalletAddress)) && 
+      // WebSocket not working
+      (!wsConnected || !wsSubscriptionActive);
+      
+    if (shouldUseFallback) {
+      logger.info(`Setting up fallback polling for ${authType} wallet`);
+      setupFallbackPolling();
+    } else if (wsConnected && wsSubscriptionActive) {
+      // Clear fallback polling if WebSocket is active
+      if (fallbackPollingIntervalRef.current) {
+        logger.info('WebSocket active, clearing fallback polling');
+        clearInterval(fallbackPollingIntervalRef.current);
+        fallbackPollingIntervalRef.current = null;
+      }
+    }
+  }, [isConnected, smartWalletAddress, account, authType, wsConnected, wsSubscriptionActive, setupFallbackPolling]);
   
   return (
     <WalletContext.Provider
@@ -363,6 +737,8 @@ export const WalletProvider = ({ children }) => {
         walletLoading,
         walletError,
         walletData, // Expose complete wallet data
+        wsConnected, // Expose WebSocket connection status
+        wsSubscriptionActive, // Expose subscription status
         getSmartWalletAddress,
         deploySmartWalletIfNeeded,
         getUSDTBalance,

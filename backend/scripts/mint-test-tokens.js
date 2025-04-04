@@ -3,7 +3,7 @@ const hre = require("hardhat");
 
 async function main() {
   const tokenAddress = "0xb76955B254240D3441291E034b42578c89Cb8477";
-  const recipientAddress = "0x4a7Cb3cA89721f3396CfeA250B71644452a38633";
+  const recipientAddress = "0xdc896959FeD33CCBA80a04a7A35B145358b112a5";
   const amount = hre.ethers.utils.parseUnits("100", 6); // 100 tokens with 6 decimals
   
   const Token = await hre.ethers.getContractFactory("TestUSDT");
