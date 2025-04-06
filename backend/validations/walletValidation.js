@@ -35,7 +35,38 @@ const deployWalletSchema = Joi.object({
     })
 });
 
+// New schema for relay transaction
+const relayTransactionSchema = Joi.object({
+  smartWalletAddress: ethereumAddress.required().messages({
+    'any.required': 'Smart wallet address is required'
+  }),
+  targetAddress: ethereumAddress.required().messages({
+    'any.required': 'Target contract address is required'
+  }),
+  callData: Joi.string()
+    .required()
+    .pattern(/^0x[a-fA-F0-9]+$/)
+    .messages({
+      'string.empty': 'Call data is required',
+      'string.pattern.base': 'Invalid call data format'
+    }),
+  signature: Joi.string()
+    .required()
+    .pattern(/^0x[a-fA-F0-9]+$/)
+    .messages({
+      'string.empty': 'Signature is required',
+      'string.pattern.base': 'Invalid signature format'
+    }),
+  value: Joi.string()
+    .pattern(/^[0-9]+$/)
+    .default('0')
+    .messages({
+      'string.pattern.base': 'Value must be a numeric string'
+    })
+});
+
 module.exports = {
   getWalletAddressSchema,
-  deployWalletSchema
+  deployWalletSchema,
+  relayTransactionSchema
 };

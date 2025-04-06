@@ -1,10 +1,10 @@
 // backend/routes/smartWalletRoutes.js
 const express = require('express');
 const router = express.Router();
-const { getWalletAddress, deployWallet } = require('../controllers/smartWalletController');
+const { getWalletAddress, deployWallet, relayTransaction } = require('../controllers/smartWalletController');
 const { isAuthenticated, verifyMagicAddress } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validation');
-const { getWalletAddressSchema, deployWalletSchema } = require('../validations/walletValidation');
+const { getWalletAddressSchema, deployWalletSchema, relayTransactionSchema } = require('../validations/walletValidation');
 
 // Smart wallet routes with validation
 router.route('/:address')
@@ -24,6 +24,14 @@ router.route('/')
     },
     validate(deployWalletSchema),
     deployWallet
+  );
+
+// Add new route for relaying transactions
+router.route('/relay-transaction')
+  .post(
+    isAuthenticated,
+    validate(relayTransactionSchema),
+    relayTransaction
   );
 
 module.exports = router;

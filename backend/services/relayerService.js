@@ -288,6 +288,80 @@ class RelayerService {
     }
   }
   
+  /**
+   * Relay a transaction from a smart wallet to any target address
+   * This method is used for general purpose transaction relaying, including token transfers
+   * @param {string} smartWalletAddress - Smart wallet address
+   * @param {string} targetAddress - Target contract address
+   * @param {string} callData - Encoded function call data
+   * @param {string} signature - Transaction signature
+   * @param {string} value - Value to send with transaction (in wei)
+   * @returns {Promise<{transactionHash: string, success: boolean}>} Transaction result
+   */
+  async relaySmartWalletTransaction(smartWalletAddress, targetAddress, callData, signature, value = "0") {
+    try {
+      logger.debug(`Relaying transaction from ${smartWalletAddress} to ${targetAddress}`);
+      
+      // Verify the smart wallet is deployed
+      const walletCode = await this.provider.getCode(smartWalletAddress);
+      if (walletCode === '0x') {
+        throw new Error(`Smart wallet at ${smartWalletAddress} is not deployed`);
+      }
+      
+      // Verify signature
+      const verificationResult = await this.verifySmartWalletSignature(
+        smartWalletAddress,
+        targetAddress,
+        callData,
+        signature
+      );
+      
+      if (!verificationResult.isValid) {
+        throw new AuthorizationError('Invalid signature. Transaction not authorized by wallet owner.');
+      }
+      
+      logger.info(`Smart wallet transaction signature verified for ${smartWalletAddress}`);
+      
+      // Get Smart Wallet contract via platform wallet provider
+      const smartWallet = await this.platformWalletProvider.getSignedContract(
+        smartWalletAddress,
+        SmartWallet.abi,
+        'relay_smart_wallet_transaction'
+      );
+      
+      // Parse value to BigNumber
+      const valueBN = ethers.BigNumber.from(value);
+      
+      // Execute through the smart wallet
+      const tx = await smartWallet.execute(
+        targetAddress,    // target
+        valueBN,          // value
+        callData,         // data
+        signature,        // signature
+        this.gasSettings  // gas settings
+      );
+      
+      logger.debug(`Transaction submitted: ${tx.hash}`);
+      
+      // Wait for transaction confirmation
+      const receipt = await tx.wait();
+      logger.debug(`Transaction confirmed: ${receipt.transactionHash}`);
+      
+      // Check transaction status
+      if (receipt.status === 0) {
+        throw new Error('Smart wallet transaction reverted on-chain');
+      }
+      
+      return {
+        transactionHash: receipt.transactionHash,
+        success: true
+      };
+    } catch (error) {
+      logger.error('Error relaying smart wallet transaction:', error);
+      throw error;
+    }
+  }
+  
   // Update gas settings - utility method
   async updateGasSettings() {
     try {

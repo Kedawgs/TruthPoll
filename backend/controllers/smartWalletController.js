@@ -84,3 +84,58 @@ exports.deployWallet = async (req, res) => {
     });
   }
 };
+
+// New controller function for relaying transactions
+exports.relayTransaction = async (req, res) => {
+  try {
+    // Get data from request
+    const {
+      smartWalletAddress,
+      targetAddress,
+      callData,
+      signature,
+      value = "0"
+    } = req.body;
+    
+    // Get the relayer service
+    const relayerService = req.app.locals.relayerService;
+    
+    // Validate the signature if this is a smart wallet transaction
+    const verificationResult = await relayerService.verifySmartWalletSignature(
+      smartWalletAddress,
+      targetAddress,
+      callData,
+      signature
+    );
+    
+    if (!verificationResult.isValid) {
+      return res.status(403).json({
+        success: false,
+        error: 'Invalid signature. Transaction not authorized by wallet owner.'
+      });
+    }
+    
+    logger.info(`Relaying transaction from smart wallet ${smartWalletAddress} to ${targetAddress}`);
+    
+    // Execute the transaction
+    const result = await relayerService.relaySmartWalletTransaction(
+      smartWalletAddress,
+      targetAddress,
+      callData,
+      signature
+    );
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        transactionHash: result.transactionHash
+      }
+    });
+  } catch (error) {
+    logger.error('Error relaying transaction:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Transaction relay failed'
+    });
+  }
+};
