@@ -1,8 +1,9 @@
 // src/pages/CreatePoll.js
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAppContext } from '../hooks/useAppContext'; // Adjust path if necessary
+import { useAppContext } from '../hooks/useAppContext';
 import api from '../utils/api'; // Added for image upload
+import PollConfirmationModal from '../components/PollConfirmationModal'; // Import the new component
 
 // --- Icons ---
 const ImagePlaceholderIcon = () => (
@@ -41,6 +42,11 @@ const CreatePoll = () => {
   const [duration] = useState('0'); // Default duration (no UI)
   const [pollCreationSuccess, setPollCreationSuccess] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null); // State for uploaded image file
+  
+  // Confirmation modal state
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [preparedPollData, setPreparedPollData] = useState(null);
+  const [uploadedImageData, setUploadedImageData] = useState(null); // Store uploaded image data
 
   // --- Memoized derived state ---
   const isRewardEnabled = useMemo(() => rewardPerVoter && parseFloat(rewardPerVoter) > 0, [rewardPerVoter]);
@@ -166,8 +172,50 @@ const CreatePoll = () => {
     return ''; // No errors
   };
 
-  // --- Form Submission ---
-  const handleSubmit = async (e) => {
+  // --- Handle Image Upload ---
+  const handleImageUpload = async () => {
+    if (!selectedFile) return { image: null, imageUrl: null };
+    
+    const formData = new FormData();
+    formData.append('image', selectedFile);
+    
+    try {
+      console.log("Attempting to upload image...");
+      const uploadResponse = await api.post('/polls/upload-image', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      if (uploadResponse.data && uploadResponse.data.success) {
+        return {
+          image: uploadResponse.data.image,
+          imageUrl: uploadResponse.data.imageUrl
+        };
+      } else {
+        throw new Error(uploadResponse.data?.message || 'Image upload failed.');
+      }
+    } catch (uploadErr) {
+      if (uploadErr.response && uploadErr.response.status === 401) {
+        console.error('Authentication error during image upload:', uploadErr);
+        const retryWithAuth = window.confirm(
+          "Authentication error uploading image. Would you like to reconnect your wallet and try again?"
+        );
+        
+        if (retryWithAuth) {
+          openAuthModal();
+          setFormError("Please reconnect your wallet and try again");
+          throw new Error("Authentication required");
+        }
+      }
+      
+      console.error('Error uploading image:', uploadErr);
+      throw uploadErr;
+    }
+  };
+
+  // --- New Initial Form Submit (Show Confirmation) ---
+  const handleInitialSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
     setPollCreationSuccess(false);
@@ -179,114 +227,92 @@ const CreatePoll = () => {
       return;
     }
 
-    // Filter out empty options before submission
+    // Filter out empty options
     const validOptionsSubmit = options.filter(option => option.trim().length > 0);
 
-    // --- NEW handleSubmit try...catch block starts here ---
     try {
-      // Prepare base poll data
+      // Upload image if needed
+      let imageData = { image: null, imageUrl: null };
+      
+      if (selectedFile) {
+        try {
+          imageData = await handleImageUpload();
+          setUploadedImageData(imageData);
+        } catch (uploadErr) {
+          // If it's an auth error, we'll return early
+          if (uploadErr.message === "Authentication required") return;
+          
+          // For other errors, we'll continue without the image
+          console.warn("Continuing without image due to upload error");
+        }
+      }
+
+      // Prepare poll data
       const pollData = {
         title: title.trim(),
         description: description.trim(),
         options: validOptionsSubmit,
         duration: parseInt(duration || '0'),
         tags: selectedTags,
-        category: 'General', // You may want to add a category selector
+        category: 'General',
         rewardPerVoter: isRewardEnabled ? rewardPerVoter : '0',
         voteLimit: parseInt(voteLimit),
-        image: null, // Initialize image field (S3 key)
-        imageUrl: null // Initialize imageUrl field (Full S3 URL)
+        image: imageData.image,
+        imageUrl: imageData.imageUrl
       };
 
-      // --- Enhanced Image Upload Logic ---
-      if (selectedFile) {
-        const formData = new FormData();
-        formData.append('image', selectedFile); // 'image' should match backend field name
+      // Store prepared data for confirmation modal
+      setPreparedPollData(pollData);
+      
+      // Show confirmation modal
+      setShowConfirmationModal(true);
+    } catch (err) {
+      console.error('Error preparing poll data:', err);
+      setFormError(err?.message || 'An error occurred while preparing your poll.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
-        // Check authentication before upload
-        const authToken = localStorage.getItem('authToken');
-        if (!authToken && isConnected) {
-          console.warn("No auth token found. May encounter authentication issues with upload.");
-        }
-
-        try {
-          console.log("Attempting to upload image...");
-          const uploadResponse = await api.post('/polls/upload-image', formData, {
-            headers: {
-              'Content-Type': 'multipart/form-data'
-            }
-          });
-
-          // Check structure of uploadResponse
-          if (uploadResponse.data && uploadResponse.data.success) {
-            // Store both the S3 key and the full URL
-            pollData.image = uploadResponse.data.image; // S3 key
-            pollData.imageUrl = uploadResponse.data.imageUrl; // Full S3 URL
-            console.log("Image uploaded successfully:", pollData.imageUrl);
-          } else {
-            console.warn("Image upload response invalid:", uploadResponse.data);
-            throw new Error(uploadResponse.data?.message || 'Image upload failed.');
-          }
-        } catch (uploadErr) {
-          // Special handling for auth errors
-          if (uploadErr.response && uploadErr.response.status === 401) {
-            console.error('Authentication error during image upload:', uploadErr);
-            const retryWithAuth = window.confirm(
-              "Authentication error uploading image. Would you like to reconnect your wallet and try again?"
-            );
-
-            if (retryWithAuth) {
-              // Open auth modal and abort current submission
-              openAuthModal();
-              setFormError("Please reconnect your wallet and try again");
-              // setWalletLoading(false); // Removed: setWalletLoading is not defined here
-              return; // Exit early
-            } else {
-              // Continue without image
-              console.log("Continuing poll creation without image");
-              pollData.image = null;
-              pollData.imageUrl = null;
-            }
-          } else {
-            // Handle other upload errors
-            console.error('Error uploading image:', uploadErr);
-            const uploadErrorMsg = uploadErr?.response?.data?.message || uploadErr.message || 'Failed to upload image.';
-            setFormError(`Poll not created: ${uploadErrorMsg}`);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            return; // Stop submission if image upload fails
-          }
-        }
+  // --- Final Form Submit (After Confirmation) ---
+  const handleFinalSubmit = async () => {
+    try {
+      if (!preparedPollData) {
+        throw new Error("Poll data is missing");
       }
-      // --- End Enhanced Image Upload Logic ---
-
-      console.log("Submitting Final Poll Data:", pollData);
-      const response = await createPoll(pollData); // Pass data including the image URL/ID
-
+      
+      // Submit the prepared poll data
+      const response = await createPoll(preparedPollData);
+      
       if (response?.data?.poll?._id) {
         // Show success message briefly before redirecting
         setPollCreationSuccess(true);
         setTimeout(() => {
-            // Using the redirect path from the new snippet
           navigate(`/polls/id/${response.data.poll._id}`);
         }, 1000);
+        return true;
       } else {
         console.warn("Poll created but response format unexpected:", response);
         setFormError("Poll created, but couldn't redirect to the poll page. Please check your polls list.");
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        return false;
       }
     } catch (err) {
       console.error('Error creating poll:', err);
       // Improved error message extraction
       const errorMsg = err?.response?.data?.error ||
-                       err?.response?.data?.message ||
-                       err.message ||
-                       'An unexpected error occurred during poll creation.';
+                      err?.response?.data?.message ||
+                      err.message ||
+                      'An unexpected error occurred during poll creation.';
       setFormError(errorMsg);
-
-      // Scroll to the error message
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      setShowConfirmationModal(false);
+      return false;
     }
-    // --- NEW handleSubmit try...catch block ends here ---
+  };
+
+  // --- Handle modal close ---
+  const handleCloseConfirmationModal = () => {
+    setShowConfirmationModal(false);
   };
 
   // --- Render Logic ---
@@ -340,7 +366,7 @@ const CreatePoll = () => {
 
         {/* --- Left Column: Form --- */}
         <div className="bg-white p-6 md:p-8 rounded-xl border border-gray-200/75 shadow-lg">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleInitialSubmit} className="space-y-6">
 
             {/* Title & Image Icon Row */}
             <div className="flex items-start space-x-3 sm:space-x-4">
@@ -609,7 +635,7 @@ const CreatePoll = () => {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Creating Poll...
+                    Processing...
                   </>
                 ) : pollCreationSuccess ? (
                   'Poll Created!'
@@ -620,7 +646,6 @@ const CreatePoll = () => {
             </div>
           </form>
         </div> {/* End Left Column */}
-
 
         {/* --- Right Column: Live Preview --- */}
         <div className="sticky top-10 bg-slate-50/75 p-6 md:p-8 rounded-xl border border-gray-200/75 shadow-lg">
@@ -725,6 +750,14 @@ const CreatePoll = () => {
           </div> {/* End inner preview card */}
         </div> {/* End Right Column */}
       </div> {/* End main grid */}
+
+      {/* Poll Confirmation Modal */}
+      <PollConfirmationModal
+        isOpen={showConfirmationModal}
+        onClose={handleCloseConfirmationModal}
+        onConfirm={handleFinalSubmit}
+        pollData={preparedPollData}
+      />
     </div> // End container
   );
 };

@@ -1,4 +1,4 @@
-// backend/services/configService.js
+// backend/services/configService.js - Updated with transaction cost estimates
 const Config = require('../models/Config');
 const logger = require('../utils/logger');
 
@@ -73,6 +73,42 @@ class ConfigService {
     } catch (error) {
       logger.error(`Error setting config ${key}:`, error);
       throw error;
+    }
+  }
+
+  // Initialize default configuration values if not present
+  async initializeDefaults() {
+    try {
+      // Check if transaction cost estimate exists
+      const existingTxCost = await this.get('ESTIMATED_TX_COST');
+      if (existingTxCost === null) {
+        // Set default transaction cost estimate (in MATIC)
+        await this.set(
+          'ESTIMATED_TX_COST',
+          0.001, // Default cost in MATIC
+          true,  // Public
+          'Estimated transaction cost for poll operations on Polygon Amoy (in MATIC)'
+        );
+        logger.info('Initialized default transaction cost estimate configuration');
+      }
+      
+      // Check if platform fee percentage exists
+      const existingPlatformFee = await this.get('PLATFORM_FEE_PERCENT');
+      if (existingPlatformFee === null) {
+        // Set default platform fee percentage
+        await this.set(
+          'PLATFORM_FEE_PERCENT',
+          6, // 6% platform fee
+          true,
+          'Platform fee percentage applied to poll rewards'
+        );
+        logger.info('Initialized default platform fee percentage configuration');
+      }
+      
+      return true;
+    } catch (error) {
+      logger.error('Error initializing default configurations:', error);
+      return false;
     }
   }
 }

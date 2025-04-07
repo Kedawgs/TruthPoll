@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 5000;
 // Socket.io setup (required here for the update)
 const socketIo = require('socket.io');
 
-// Seed initial configuration values
+// This function should be modified to include our transaction cost estimates
 const seedInitialConfig = async () => {
   try {
     // Check if any configurations exist
@@ -86,9 +86,31 @@ const seedInitialConfig = async () => {
         false, // Keep private
         'JWT Token Expiration Time'
       );
+      
+      // NEW: Transaction cost estimates
+      await configService.set(
+        'ESTIMATED_TX_COST',
+        0.001, // Default cost in MATIC
+        true,
+        'Estimated transaction cost for poll operations on Polygon Amoy (in MATIC)'
+      );
+      
+      // NEW: Platform fee percentage
+      await configService.set(
+        'PLATFORM_FEE_PERCENT',
+        6, // 6% platform fee
+        true,
+        'Platform fee percentage applied to poll rewards'
+      );
 
       logger.info('Initial configuration seeded successfully');
     }
+    
+    // Additionally, always initialize any missing default values
+    // This ensures that even if the main config exists but our new values don't,
+    // they will be created
+    await configService.initializeDefaults();
+    
   } catch (error) {
     logger.error('Error seeding initial configuration:', error);
   }
