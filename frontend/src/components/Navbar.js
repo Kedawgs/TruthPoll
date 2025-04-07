@@ -1,11 +1,12 @@
 // src/components/Navbar.js
-// Updated to include avatar in dropdown header
+// Updated to include clickable balance with modal
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext'; // Ensure this path is correct
 import './Navbar.css'; // Ensure CSS is imported
 import Sidebar from './Sidebar'; // Assuming Sidebar component exists
+import BalanceModal from './BalanceModal'; // Import the new BalanceModal component
 import fullLogo from '../assets/test123.png'; // UPDATE THIS PATH to your actual logo
 import api from '../utils/api'; // Assuming api utility exists
 import { formatAddress } from '../utils/web3Helper'; // Assuming this helper exists
@@ -29,6 +30,7 @@ const Navbar = () => {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
 
   // Refs for hover logic and closing dropdowns/search
   const profileHoverTimerRef = useRef(null);
@@ -87,6 +89,15 @@ const Navbar = () => {
   };
   // --- End Hover Logic for Sidebar ---
 
+  // --- Balance Modal Handlers ---
+  const handleBalanceClick = () => {
+    setShowBalanceModal(true);
+  };
+
+  const closeBalanceModal = () => {
+    setShowBalanceModal(false);
+  };
+  // --- End Balance Modal Handlers ---
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -338,10 +349,14 @@ const Navbar = () => {
             {isConnected && account ? ( // Check for account as well
               // Logged In State
               <div className="user-profile">
-                   {/* USDT Balance */}
-                   {usdtBalance !== null && ( // Conditionally render balance
-                       <div className="usdt-balance" title={`USDT Balance: ${usdtBalance}`}>
-                           <span>{parseFloat(usdtBalance).toFixed(2)}</span> {/* Format to 2 decimals */}
+                   {/* USDT Balance - UPDATED TO BE CLICKABLE */}
+                   {usdtBalance !== null && (
+                       <div 
+                         className="usdt-balance cursor-pointer hover:bg-gray-200 transition-colors" 
+                         title="Click to deposit or withdraw USDT"
+                         onClick={handleBalanceClick}
+                       >
+                           <span>{parseFloat(usdtBalance).toFixed(2)}</span>
                            <span className="usdt-symbol">USDT</span>
                        </div>
                    )}
@@ -476,6 +491,15 @@ const Navbar = () => {
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
       />
+
+      {/* Balance Modal */}
+      {showBalanceModal && (
+        <BalanceModal
+          isOpen={showBalanceModal}
+          onClose={closeBalanceModal}
+          refreshBalance={refreshUSDTBalance}
+        />
+      )}
     </>
   );
 };
