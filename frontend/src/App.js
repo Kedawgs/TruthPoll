@@ -20,6 +20,7 @@ import UsernameModal from './components/UsernameModal';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminConfig from './pages/AdminConfig';
 import Profile from './pages/Profile';
+import Footer from './components/Footer';
 
 // --- Helper Wrapper Component for PollDetail ---
 // This component gets the 'id' and passes it as a 'key' to PollDetail
@@ -96,11 +97,8 @@ function AppContent() {
     openAuthModal
   } = useAppContext();
 
-  const [, setActiveFilter] = useState('all');
-
   const handleFilterChange = (filter) => {
-    setActiveFilter(filter);
-    console.log('Filter changed to:', filter);
+    // Handle tab changes in SubNav
   };
 
   const ProtectedRoute = ({ children }) => {
@@ -189,16 +187,7 @@ function AppContent() {
         </Routes>
       </main>
 
-      <footer className="bg-white border-t py-6 mt-auto">
-        <div className="container mx-auto px-4 text-center text-gray-500 text-sm">
-          <p>© {new Date().getFullYear()} TruthPoll. All rights reserved.</p>
-          <div className="mt-2 flex justify-center space-x-4">
-            <a href="/privacy" className="hover:text-gray-700">Privacy Policy</a>
-            <a href="/terms" className="hover:text-gray-700">Terms of Service</a>
-          </div>
-          <p className="mt-2">Running on Polygon Amoy Testnet</p>
-        </div>
-      </footer>
+      <Footer />
 
       <AuthModal />
 

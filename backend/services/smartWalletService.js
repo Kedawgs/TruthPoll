@@ -1,6 +1,7 @@
 // backend/services/smartWalletService.js
 const ethers = require('ethers');
 const SmartWalletFactory = require('../artifacts/contracts/SmartWalletFactory.sol/SmartWalletFactory.json');
+const TestUSDT = require('../artifacts/contracts/TestUSDT.sol/TestUSDT.json');
 const logger = require('../utils/logger');
 
 class SmartWalletService {
@@ -8,6 +9,7 @@ class SmartWalletService {
     this.provider = provider;
     this.platformWalletProvider = platformWalletProvider;
     this.factoryAddress = process.env.SMART_WALLET_FACTORY_ADDRESS;
+    this.usdtAddress = process.env.USDT_ADDRESS;
     
     // Default gas settings for Polygon Amoy testnet
     this.gasSettings = {
@@ -25,6 +27,17 @@ class SmartWalletService {
       logger.info(`SmartWalletFactory initialized at ${this.factoryAddress}`);
     } else {
       logger.warn('SmartWalletFactory address not set in environment variables');
+    }
+
+    if (this.usdtAddress) {
+      this.usdtContract = new ethers.Contract(
+        this.usdtAddress,
+        TestUSDT.abi,
+        this.provider
+      );
+      logger.info(`USDT contract initialized at ${this.usdtAddress}`);
+    } else {
+      logger.warn('USDT address not set in environment variables');
     }
   }
   
@@ -215,6 +228,191 @@ class SmartWalletService {
       logger.error('Error fetching gas prices:', error);
       // Return default values if fetching fails
       return this.gasSettings;
+    }
+  }
+
+  // NEW: Get USDT balance for a wallet address
+  async getUSDTBalance(walletAddress) {
+    try {
+      if (!this.usdtContract) {
+        throw new Error('USDT contract not initialized');
+      }
+
+      const balance = await this.usdtContract.balanceOf(walletAddress);
+      // USDT uses 6 decimals
+      const formattedBalance = ethers.utils.formatUnits(balance, 6);
+      
+      logger.info(`USDT balance for ${walletAddress}: ${formattedBalance}`);
+      return formattedBalance;
+    } catch (error) {
+      logger.error(`Error getting USDT balance for ${walletAddress}:`, error);
+      throw error;
+    }
+  }
+
+  // NEW: Check if wallet has enough USDT for an operation
+  async hasEnoughUSDT(walletAddress, amount) {
+    try {
+      const balance = await this.getUSDTBalance(walletAddress);
+      const hasEnough = parseFloat(balance) >= parseFloat(amount);
+      
+      logger.info(`Wallet ${walletAddress} has ${balance} USDT. Required: ${amount}. Sufficient: ${hasEnough}`);
+      return hasEnough;
+    } catch (error) {
+      logger.error(`Error checking if wallet has enough USDT:`, error);
+      return false;
+    }
+  }
+
+  // NEW: Create USDT approval transaction for relayer
+  async createUSDTApprovalTransaction(ownerAddress, spenderAddress, amount) {
+    try {
+      if (!this.usdtContract) {
+        throw new Error('USDT contract not initialized');
+      }
+      
+      // Get smart wallet address for the owner
+      const smartWalletAddress = await this.getWalletAddress(ownerAddress);
+      
+      // Check if smart wallet is deployed
+      const isDeployed = await this.isWalletDeployed(smartWalletAddress);
+      if (!isDeployed) {
+        throw new Error('Smart wallet not deployed. Deploy it first before approving USDT.');
+      }
+      
+      // Parse amount to wei
+      const amountWei = ethers.utils.parseUnits(amount.toString(), 6); // USDT uses 6 decimals
+      
+      // Encode the approve function call
+      const usdtInterface = new ethers.utils.Interface(TestUSDT.abi);
+      const callData = usdtInterface.encodeFunctionData('approve', [spenderAddress, amountWei]);
+      
+      logger.info(`Created USDT approval transaction from ${smartWalletAddress} to approve ${amount} USDT for ${spenderAddress}`);
+      
+      return {
+        smartWalletAddress,
+        targetAddress: this.usdtAddress,
+        callData,
+        amount: amountWei.toString()
+      };
+    } catch (error) {
+      logger.error('Error creating USDT approval transaction:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Create USDT transfer transaction for relayer
+  async createUSDTTransferTransaction(ownerAddress, recipientAddress, amount) {
+    try {
+      if (!this.usdtContract) {
+        throw new Error('USDT contract not initialized');
+      }
+      
+      // Get smart wallet address for the owner
+      const smartWalletAddress = await this.getWalletAddress(ownerAddress);
+      
+      // Check if smart wallet is deployed
+      const isDeployed = await this.isWalletDeployed(smartWalletAddress);
+      if (!isDeployed) {
+        throw new Error('Smart wallet not deployed. Deploy it first before transferring USDT.');
+      }
+      
+      // Parse amount to wei
+      const amountWei = ethers.utils.parseUnits(amount.toString(), 6); // USDT uses 6 decimals
+      
+      // Encode the transfer function call
+      const usdtInterface = new ethers.utils.Interface(TestUSDT.abi);
+      const callData = usdtInterface.encodeFunctionData('transfer', [recipientAddress, amountWei]);
+      
+      logger.info(`Created USDT transfer transaction from ${smartWalletAddress} to send ${amount} USDT to ${recipientAddress}`);
+      
+      return {
+        smartWalletAddress,
+        targetAddress: this.usdtAddress,
+        callData,
+        amount: amountWei.toString()
+      };
+    } catch (error) {
+      logger.error('Error creating USDT transfer transaction:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Calculate platform fee for a USDT amount
+  async calculatePlatformFee(amount, feePercentage = 6) {
+    try {
+      // Default platform fee is 6% if not provided
+      const fee = (parseFloat(amount) * feePercentage) / 100;
+      return fee.toFixed(6); // Use 6 decimal places for USDT
+    } catch (error) {
+      logger.error('Error calculating platform fee:', error);
+      throw error;
+    }
+  }
+
+  // NEW: Create poll funding transaction
+  async createPollFundingTransaction(ownerAddress, pollFactoryAddress, title, options, duration, rewardPerVoter, fundAmount) {
+    try {
+      if (!this.usdtContract) {
+        throw new Error('USDT contract not initialized');
+      }
+      
+      // Get smart wallet address for the owner
+      const smartWalletAddress = await this.getWalletAddress(ownerAddress);
+      
+      // Check if smart wallet is deployed
+      const isDeployed = await this.isWalletDeployed(smartWalletAddress);
+      if (!isDeployed) {
+        throw new Error('Smart wallet not deployed. Deploy it first before funding a poll.');
+      }
+      
+      // Parse amounts to wei
+      const rewardPerVoterWei = ethers.utils.parseUnits(rewardPerVoter.toString(), 6); // USDT uses 6 decimals
+      const fundAmountWei = ethers.utils.parseUnits(fundAmount.toString(), 6); // USDT uses 6 decimals
+      
+      // Calculate platform fee
+      const platformFeePercent = 600; // 6.00%
+      const platformFeeWei = fundAmountWei.mul(platformFeePercent).div(10000);
+      const totalAmountWei = fundAmountWei.add(platformFeeWei);
+      
+      // Get Poll Factory interface
+      const pollFactoryInterface = new ethers.utils.Interface([
+        "function createAndFundPoll(string memory _title, string[] memory _options, uint256 _duration, uint256 _rewardPerVoter, uint256 _fundAmount) external returns (address)"
+      ]);
+      
+      // Encode the createAndFundPoll function call
+      const callData = pollFactoryInterface.encodeFunctionData('createAndFundPoll', [
+        title,
+        options,
+        ethers.BigNumber.from(duration),
+        rewardPerVoterWei,
+        fundAmountWei
+      ]);
+      
+      logger.info(`Created poll funding transaction for "${title}" with ${fundAmount} USDT of rewards and ${ethers.utils.formatUnits(platformFeeWei, 6)} USDT platform fee`);
+      
+      // First, we need to approve the factory to spend our USDT
+      const approvalTx = await this.createUSDTApprovalTransaction(
+        ownerAddress,
+        pollFactoryAddress,
+        ethers.utils.formatUnits(totalAmountWei, 6)
+      );
+      
+      return {
+        approvalTransaction: approvalTx,
+        createPollTransaction: {
+          smartWalletAddress,
+          targetAddress: pollFactoryAddress,
+          callData,
+          amount: "0" // No ETH value sent with this call
+        },
+        totalAmount: ethers.utils.formatUnits(totalAmountWei, 6),
+        platformFee: ethers.utils.formatUnits(platformFeeWei, 6),
+        pollFunding: fundAmount
+      };
+    } catch (error) {
+      logger.error('Error creating poll funding transaction:', error);
+      throw error;
     }
   }
 }

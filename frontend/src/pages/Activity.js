@@ -16,26 +16,19 @@ const Activity = () => {
       ? process.env.REACT_APP_API_URL.replace('/api', '') 
       : 'http://localhost:5000';
     
-    console.log('Connecting to Socket.IO at:', socketUrl);
     const socket = io(socketUrl);
     
-    socket.on('connect', () => {
-      console.log('Connected to activity socket');
-    });
-    
     socket.on('connect_error', (err) => {
-      console.error('Socket connection error:', err);
+      setError('Unable to connect to activity feed');
     });
     
     // Listen for activity updates
     socket.on('activity-update', (activity) => {
-      console.log('Received new activity:', activity);
       setActivities(prev => [activity, ...prev]);
     });
     
     // Cleanup on unmount
     return () => {
-      console.log('Disconnecting from socket');
       socket.disconnect();
     };
   }, []);
@@ -54,7 +47,6 @@ const Activity = () => {
           setError('Failed to load activity data');
         }
       } catch (err) {
-        console.error('Error fetching activities:', err);
         setError('Error loading activity feed');
       } finally {
         setLoading(false);

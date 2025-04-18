@@ -2,7 +2,6 @@
 const { successResponse, paginatedResponse } = require('../utils/responseHandler');
 const { NotFoundError, AuthorizationError, BlockchainError } = require('../utils/errorTypes');
 const logger = require('../utils/logger');
-const { getS3BaseUrl } = require('../utils/s3Utils');
 const Poll = require('../models/Poll');
 const User = require('../models/User');
 // Note: Activity model is required within the functions now
@@ -116,12 +115,6 @@ exports.getPoll = async (req, res, next) => {
     const pollService = req.app.locals.pollService;
 
     const pollData = await pollService.getPoll(req.params.id);
-
-    // If poll has an image key but no imageUrl, add it
-    if (pollData.data && pollData.data.image && !pollData.data.imageUrl) {
-      pollData.data.imageUrl = `${getS3BaseUrl()}${pollData.data.image}`;
-    }
-
     return successResponse(res, pollData);
   } catch (error) {
     next(error);

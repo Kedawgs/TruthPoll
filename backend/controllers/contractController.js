@@ -136,3 +136,42 @@ exports.getPollDetails = async (req, res) => {
     });
   }
 };
+
+/**
+ * @desc    Approve USDT spending for poll creation
+ * @route   POST /api/contracts/approve-usdt
+ * @access  Private
+ */
+exports.approveUSDT = async (req, res) => {
+  try {
+    const { amount, ownerAddress, spenderAddress } = req.body;
+    
+    if (!amount || !ownerAddress || !spenderAddress) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide amount, ownerAddress, and spenderAddress'
+      });
+    }
+    
+    // Get contract service from app.locals
+    const contractService = req.app.locals.contractService;
+    
+    // Call the service method to approve USDT spending
+    const result = await contractService.approveUSDT(
+      ownerAddress,
+      spenderAddress,
+      amount
+    );
+    
+    res.status(200).json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    logger.error('Error approving USDT:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Server Error'
+    });
+  }
+};

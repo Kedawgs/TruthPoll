@@ -9,17 +9,43 @@ import { formatAddress } from '../utils/web3Helper'; // Assuming helper exists
 import './Profile.css'; // Your specific styles
 import logger from '../utils/logger'; // Optional logger
 
-// --- Placeholder Icon Components (Replace with your actual icons or remove if unused) ---
-const PlaceholderIcon = ({ className = "w-6 h-6 text-gray-500" }) => (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+// Define all icons needed for the profile page
+const ActionIcon = () => (
+    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
 );
-const RewardsIcon = ({ className }) => <div className={`${className} bg-green-100 text-green-600 rounded-full p-1.5 flex items-center justify-center`}><PlaceholderIcon className="w-5 h-5"/></div>;
-const VotesIcon = ({ className }) => <div className={`${className} bg-blue-100 text-blue-600 rounded-full p-1.5 flex items-center justify-center`}><PlaceholderIcon className="w-5 h-5"/></div>;
-const PollsIcon = ({ className }) => <div className={`${className} bg-purple-100 text-purple-600 rounded-full p-1.5 flex items-center justify-center`}><PlaceholderIcon className="w-5 h-5"/></div>;
-const ActivityIcon = ({ className }) => <div className={`${className} p-1`}><PlaceholderIcon className="w-5 h-5" /></div>;
-const MyPollsIcon = ({ className }) => <div className={`${className} p-1`}><PlaceholderIcon className="w-5 h-5" /></div>;
-const ActionIcon = ({ className }) => <div className={`${className} w-4 h-4 text-gray-400`}><PlaceholderIcon className="w-full h-full"/></div>;
-// --- End Placeholder Icons ---
+
+const RewardsIcon = ({ className }) => (
+    <svg className={className || "w-5 h-5 text-green-600"} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+);
+
+const VotesIcon = ({ className }) => (
+    <svg className={className || "w-5 h-5 text-blue-600"} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+);
+
+const PollsIcon = ({ className }) => (
+    <svg className={className || "w-5 h-5 text-purple-600"} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+    </svg>
+);
+
+const ActivityIcon = ({ className }) => (
+    <svg className={className || "w-5 h-5 text-gray-600"} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+    </svg>
+);
+
+const MyPollsIcon = ({ className }) => (
+    <svg className={className || "w-5 h-5 text-indigo-600"} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+    </svg>
+);
 
 
 const Profile = () => {
@@ -45,9 +71,6 @@ const Profile = () => {
     const [uploadingAvatar, setUploadingAvatar] = useState(false); // Upload loading state
     const fileInputRef = useRef(null); // Ref for the hidden file input
 
-    // *** LOG 3: Log userProfile on every render ***
-    // Helps see if the state update from setUserProfile triggers a re-render with new data
-    console.log('[Profile Component Render] Current userProfile:', userProfile);
 
     // Effect to load initial profile stats and activity
     useEffect(() => {
@@ -162,8 +185,6 @@ const Profile = () => {
             // Handle success
             if (response.data.success) {
                 const newAvatarUrl = response.data.data.avatarUrl;
-                // *** LOG 1: Log the received URL ***
-                console.log('[handleUploadAvatar] Success! Received new avatar URL:', newAvatarUrl);
 
                 // Update the context state
                 setUserProfile((prevProfile) => {
@@ -171,8 +192,6 @@ const Profile = () => {
                         ...(prevProfile || {}), // Safely spread previous state or empty object
                         avatarUrl: newAvatarUrl, // Set the new URL
                     };
-                    // *** LOG 2: Log the updated state object ***
-                    console.log('[handleUploadAvatar] Updating userProfile state to:', updatedProfile);
                     return updatedProfile;
                 });
                 setSelectedFile(null); // Clear the selected file state
@@ -213,12 +232,7 @@ const Profile = () => {
                 <thead><tr><th>Action</th><th>Details</th><th>Time</th></tr></thead>
                 <tbody>
                     {activity.length === 0 ? (
-                         <>
-                             {/* Placeholder rows */}
-                             <tr><td><span className="action-cell"><ActionIcon /> Vote Placed</span></td><td>Example Poll: Who will win the next election?</td><td>09:24 12/03/2025</td></tr>
-                             <tr><td><span className="action-cell"><ActionIcon /> Poll Created</span></td><td>Example Poll: Market Sentiment on ETH?</td><td>08:15 12/03/2025</td></tr>
-                             <tr><td><span className="action-cell"><ActionIcon /> Payout</span></td><td>Example Poll: Result for Weather Prediction</td><td>14:30 11/03/2025</td></tr>
-                         </>
+                        <tr><td colSpan="3" className="no-data-cell">No activity found</td></tr>
                     ) : (
                        activity.map((item, index) => (
                            <tr key={item._id || index}>
@@ -245,11 +259,7 @@ const Profile = () => {
                  <table className="activity-table">
                      <thead><tr><th>Poll Title</th><th>Status</th><th>Date Created</th></tr></thead>
                       <tbody>
-                         {/* Add logic here to fetch and map user's created polls */}
                          <tr><td colSpan="3" className="no-data-cell">You haven't created any polls yet.</td></tr>
-                         {/* Placeholder rows */}
-                         <tr><td>Example Poll 1: Future of AI</td><td>Active</td><td>11/03/2025</td></tr>
-                         <tr><td>Example Poll 2: Crypto Prices</td><td>Ended</td><td>10/03/2025</td></tr>
                      </tbody>
                  </table>
              </div>
@@ -303,10 +313,8 @@ const Profile = () => {
                                         alt="Profile Avatar"
                                         className="h-full w-full object-cover"
                                         onError={(e) => { // Handle image load errors
-                                            console.error('Image load error:', e);
-                                            // Optionally hide the broken image or show placeholder
-                                            // e.target.style.display='none';
-                                            // Consider setting avatarUrl back to null in state here?
+                                            // Hide broken image
+                                            e.target.style.display='none';
                                         }}
                                     />
                                 ) : (

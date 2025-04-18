@@ -1,7 +1,9 @@
 // backend/services/relayerService.js
 const ethers = require('ethers');
 const Poll = require('../artifacts/contracts/Poll.sol/Poll.json');
+const PollFactory = require('../artifacts/contracts/PollFactory.sol/PollFactory.json');
 const SmartWallet = require('../artifacts/contracts/SmartWalletFactory.sol/SmartWallet.json');
+const IERC20 = require('../artifacts/@openzeppelin/contracts/token/ERC20/IERC20.sol/IERC20.json');
 const logger = require('../utils/logger');
 const { AuthorizationError } = require('../utils/errorTypes');
 
@@ -16,6 +18,12 @@ class RelayerService {
       maxFeePerGas: ethers.utils.parseUnits("35", "gwei"),
       gasLimit: 3000000
     };
+
+    // USDT token address from environment
+    this.usdtAddress = process.env.USDT_ADDRESS;
+    
+    // Factory address from environment
+    this.factoryAddress = process.env.FACTORY_ADDRESS;
   }
   
   /**
@@ -284,6 +292,220 @@ class RelayerService {
       };
     } catch (error) {
       logger.error('Error relaying smart wallet vote:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Relay a token approval transaction from a smart wallet
+   * @param {string} smartWalletAddress - Smart wallet address
+   * @param {string} tokenAddress - Token contract address
+   * @param {string} spenderAddress - Address to approve spending
+   * @param {string} amount - Amount to approve
+   * @param {string} signature - Transaction signature
+   * @returns {Promise<{transactionHash: string, success: boolean}>} Transaction result
+   */
+  async relayTokenApproval(smartWalletAddress, tokenAddress, spenderAddress, amount, signature) {
+    try {
+      logger.debug(`Relaying token approval: Wallet=${smartWalletAddress}, Token=${tokenAddress}, Spender=${spenderAddress}, Amount=${amount}`);
+      
+      // Verify the smart wallet is deployed
+      const walletCode = await this.provider.getCode(smartWalletAddress);
+      if (walletCode === '0x') {
+        throw new Error(`Smart wallet at ${smartWalletAddress} is not deployed`);
+      }
+      
+      // Encode the approve function call
+      const tokenInterface = new ethers.utils.Interface(IERC20.abi);
+      const callData = tokenInterface.encodeFunctionData('approve', [spenderAddress, amount]);
+      
+      // Verify signature
+      const verificationResult = await this.verifySmartWalletSignature(
+        smartWalletAddress,
+        tokenAddress,
+        callData,
+        signature
+      );
+      
+      if (!verificationResult.isValid) {
+        throw new AuthorizationError('Invalid signature. Token approval not authorized by wallet owner.');
+      }
+      
+      logger.info(`Token approval signature verified for ${smartWalletAddress}`);
+      
+      // Get Smart Wallet contract via platform wallet provider
+      const smartWallet = await this.platformWalletProvider.getSignedContract(
+        smartWalletAddress,
+        SmartWallet.abi,
+        'relay_token_approval'
+      );
+      
+      // Execute through the smart wallet
+      const tx = await smartWallet.execute(
+        tokenAddress,     // target
+        0,                // value
+        callData,         // data
+        signature,        // signature
+        this.gasSettings  // gas settings
+      );
+      
+      logger.debug(`Approval transaction submitted: ${tx.hash}`);
+      
+      // Wait for transaction confirmation
+      const receipt = await tx.wait();
+      logger.debug(`Approval transaction confirmed: ${receipt.transactionHash}`);
+      
+      // Check transaction status
+      if (receipt.status === 0) {
+        throw new Error('Approval transaction reverted on-chain');
+      }
+      
+      return {
+        transactionHash: receipt.transactionHash,
+        success: true
+      };
+    } catch (error) {
+      logger.error('Error relaying token approval:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Relay a poll creation with funding transaction
+   * @param {string} smartWalletAddress - Smart wallet address
+   * @param {string} title - Poll title
+   * @param {string[]} options - Poll options
+   * @param {number} duration - Poll duration in seconds (0 for no end)
+   * @param {string} rewardPerVoter - Reward per voter in USDT (wei format)
+   * @param {string} fundAmount - Total fund amount in USDT (wei format)
+   * @param {string} signature - Transaction signature
+   * @returns {Promise<{transactionHash: string, pollAddress: string, success: boolean}>} Transaction result
+   */
+  async relayCreateAndFundPoll(smartWalletAddress, title, options, duration, rewardPerVoter, fundAmount, signature) {
+    try {
+      logger.debug(`Relaying poll creation with funding: Wallet=${smartWalletAddress}, Title=${title}, RewardPerVoter=${rewardPerVoter}, FundAmount=${fundAmount}`);
+      
+      // Verify the smart wallet is deployed
+      const walletCode = await this.provider.getCode(smartWalletAddress);
+      if (walletCode === '0x') {
+        throw new Error(`Smart wallet at ${smartWalletAddress} is not deployed`);
+      }
+      
+      // First, we need to verify that token approval is in place
+      // Get token contract
+      const tokenContract = new ethers.Contract(
+        this.usdtAddress,
+        IERC20.abi,
+        this.provider
+      );
+      
+      // Get factory contract
+      const factoryContract = new ethers.Contract(
+        this.factoryAddress,
+        PollFactory.abi,
+        this.provider
+      );
+      
+      // Check allowance
+      const allowance = await tokenContract.allowance(smartWalletAddress, this.factoryAddress);
+      const fundAmountBN = ethers.BigNumber.from(fundAmount);
+      
+      // Calculate platform fee
+      const platformFee = await factoryContract.calculatePlatformFee(fundAmountBN);
+      const totalRequired = fundAmountBN.add(platformFee);
+      
+      if (allowance.lt(totalRequired)) {
+        throw new Error(`Insufficient USDT allowance. Required: ${totalRequired.toString()}, Current: ${allowance.toString()}`);
+      }
+      
+      // Check USDT balance
+      const balance = await tokenContract.balanceOf(smartWalletAddress);
+      if (balance.lt(totalRequired)) {
+        throw new Error(`Insufficient USDT balance. Required: ${totalRequired.toString()}, Current: ${balance.toString()}`);
+      }
+      
+      // Encode the createAndFundPoll function call
+      const factoryInterface = new ethers.utils.Interface(PollFactory.abi);
+      const callData = factoryInterface.encodeFunctionData('createAndFundPoll', [
+        title,
+        options,
+        duration,
+        rewardPerVoter,
+        fundAmount
+      ]);
+      
+      // Verify signature
+      const verificationResult = await this.verifySmartWalletSignature(
+        smartWalletAddress,
+        this.factoryAddress,
+        callData,
+        signature
+      );
+      
+      if (!verificationResult.isValid) {
+        throw new AuthorizationError('Invalid signature. Poll creation not authorized by wallet owner.');
+      }
+      
+      logger.info(`Poll creation signature verified for ${smartWalletAddress}`);
+      
+      // Get Smart Wallet contract via platform wallet provider
+      const smartWallet = await this.platformWalletProvider.getSignedContract(
+        smartWalletAddress,
+        SmartWallet.abi,
+        'relay_create_poll'
+      );
+      
+      // Execute through the smart wallet
+      const tx = await smartWallet.execute(
+        this.factoryAddress, // target
+        0,                   // value
+        callData,            // data
+        signature,           // signature
+        {                    // gas settings
+          ...this.gasSettings,
+          gasLimit: 5000000  // Increase gas limit for poll creation
+        }
+      );
+      
+      logger.debug(`Poll creation transaction submitted: ${tx.hash}`);
+      
+      // Wait for transaction confirmation
+      const receipt = await tx.wait();
+      logger.debug(`Poll creation transaction confirmed: ${receipt.transactionHash}`);
+      
+      // Check transaction status
+      if (receipt.status === 0) {
+        throw new Error('Poll creation transaction reverted on-chain');
+      }
+      
+      // Extract poll address from event
+      let pollAddress = null;
+      try {
+        // Get PollCreatedAndFunded event
+        const event = receipt.events.find(e => {
+          if (!e.topics || e.topics.length === 0) return false;
+          const eventTopic = factoryContract.interface.getEvent('PollCreatedAndFunded').topic;
+          return e.topics[0] === eventTopic;
+        });
+        
+        if (event) {
+          const parsedLog = factoryContract.interface.parseLog(event);
+          pollAddress = parsedLog.args.pollAddress;
+          logger.info(`New poll created at address: ${pollAddress}`);
+        } else {
+          logger.warn('PollCreatedAndFunded event not found in transaction logs');
+        }
+      } catch (eventError) {
+        logger.error('Error extracting poll address from event:', eventError);
+      }
+      
+      return {
+        transactionHash: receipt.transactionHash,
+        pollAddress,
+        success: true
+      };
+    } catch (error) {
+      logger.error('Error relaying poll creation:', error);
       throw error;
     }
   }

@@ -28,8 +28,6 @@ const AuthModal = () => {
       return;
     }
     
-    // Add logging here
-    console.log("Attempting login with email:", email);
     
     setEmailError('');
     const success = await loginWithMagic('email', { email });

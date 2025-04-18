@@ -18,7 +18,7 @@ const Navbar = () => {
   // Context data - Ensure all needed values are pulled
   const {
     isConnected, account, isAdmin, logout, openAuthModal,
-    usdtBalance, refreshUSDTBalance, userProfile, setUserProfile // Include setUserProfile if needed elsewhere in Navbar
+    usdtBalance, refreshUSDTBalance, userProfile // Include setUserProfile if needed elsewhere in Navbar
   } = useAppContext();
 
   // State
@@ -205,8 +205,6 @@ const Navbar = () => {
     return account ? account.substring(2, 3).toUpperCase() : '?';
   };
 
-  // Formats address (e.g., 0x123...abcd) - Moved to web3Helper in previous steps, ensure import
-  // const formatAddress = (address) => { ... }; // Make sure this is imported or defined
 
   // Calculates leading percentage for search results
   const calculateLeadingPercentage = (poll) => {

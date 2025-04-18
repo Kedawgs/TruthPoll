@@ -1,7 +1,10 @@
 // backend/services/contractService.js
 const ethers = require('ethers');
+const fs = require('fs');
+const path = require('path');
 const PollFactory = require('../artifacts/contracts/PollFactory.sol/PollFactory.json');
 const Poll = require('../artifacts/contracts/Poll.sol/Poll.json');
+const TestUSDT = require('../artifacts/contracts/TestUSDT.sol/TestUSDT.json');
 const logger = require('../utils/logger');
 
 class ContractService {
@@ -9,14 +12,14 @@ class ContractService {
     this.provider = provider;
     this.platformWalletProvider = platformWalletProvider;
     
-    // Default gas settings for Polygon
+    // Default gas settings for Polygon Amoy testnet
     this.gasSettings = {
-      maxPriorityFeePerGas: ethers.utils.parseUnits("30", "gwei"),
-      maxFeePerGas: ethers.utils.parseUnits("35", "gwei"),
+      maxPriorityFeePerGas: ethers.utils.parseUnits("40", "gwei"),
+      maxFeePerGas: ethers.utils.parseUnits("50", "gwei"),
       gasLimit: 3000000
     };
     
-    // Initialize factories
+    // Initialize contracts
     this.factoryAddress = process.env.FACTORY_ADDRESS;
     this.usdtAddress = process.env.USDT_ADDRESS;
     
@@ -32,7 +35,7 @@ class ContractService {
     }
   }
 
-  // Create a new poll
+  // Create a standard poll without funding
   async createPoll(title, options, duration = 0, rewardPerVoter = 0) {
     try {
       if (!this.factoryContract) {
@@ -83,7 +86,202 @@ class ContractService {
     }
   }
 
+  /**
+   * Create a new poll with funding in one transaction
+   * @param {string} title - Poll title
+   * @param {string[]} options - Poll options
+   * @param {number} duration - Poll duration in seconds
+   * @param {number} rewardPerVoter - USDT reward per voter
+   * @param {number} fundAmount - Total USDT amount to fund the poll with
+   * @param {string} creator - Creator's address (optional)
+   * @param {number} platformFee - Optional explicit platform fee override
+   * @returns {Promise<Object>} Creation result with poll address
+   */
+  async createAndFundPoll(title, options, duration = 0, rewardPerVoter = 0, fundAmount = 0, creator, platformFee = null) {
+    try {
+      if (!this.factoryContract) {
+        throw new Error('Factory contract not initialized');
+      }
+      
+      // Use provided platform fee or get from contract
+      let totalFeeAmount;
+      if (platformFee !== null) {
+        totalFeeAmount = parseFloat(platformFee);
+        logger.info(`Using provided platform fee: ${totalFeeAmount} USDT`);
+      } else {
+        // Calculate platform fee as contract would (6% of fund amount)
+        const feePercent = await this.factoryContract.platformFeePercent();
+        totalFeeAmount = (parseFloat(fundAmount) * feePercent.toNumber()) / 10000;
+        logger.info(`Calculated platform fee: ${totalFeeAmount} USDT (${feePercent.toNumber()/100}%)`);
+      }
+      
+      // Total amount that will be transferred (fund + fee)
+      const totalAmount = parseFloat(fundAmount) + totalFeeAmount;
+      
+      logger.info(`Creating poll with funding: "${title}", Options: ${options.length}, Duration: ${duration}, Reward: ${rewardPerVoter}, Fund: ${fundAmount}, Fee: ${totalFeeAmount}, Total: ${totalAmount}`);
+      
+      // Convert numbers to proper format for contract
+      const rewardPerVoterWei = ethers.utils.parseUnits(rewardPerVoter.toString(), 6); // USDT has 6 decimals
+      const fundAmountWei = ethers.utils.parseUnits(fundAmount.toString(), 6);
+      
+      // First, ensure USDT is approved by checking current allowance
+      const usdtContract = new ethers.Contract(
+        this.usdtAddress,
+        ["function allowance(address owner, address spender) view returns (uint256)"],
+        this.provider
+      );
+      
+      // Convert total amount (fund + fee) to wei
+      const totalAmountWei = ethers.utils.parseUnits(totalAmount.toString(), 6);
+      
+      const currentAllowance = await usdtContract.allowance(creator, this.factoryAddress);
+      if (currentAllowance.lt(totalAmountWei)) {
+        logger.error(`Insufficient allowance: ${ethers.utils.formatUnits(currentAllowance, 6)} USDT < ${totalAmount} USDT`);
+        throw new Error(`Insufficient USDT allowance. Please approve at least ${totalAmount} USDT (${fundAmount} for rewards + ${totalFeeAmount} for platform fees).`);
+      }
+      
+      // Get signed contract
+      const signedFactory = await this.platformWalletProvider.getSignedContract(
+        this.factoryAddress,
+        PollFactory.abi,
+        'create_and_fund_poll'
+      );
+      
+      // Get current gas prices for better transaction success
+      const feeData = await this.provider.getFeeData();
+      
+      // Call the createAndFundPoll function with proper gas settings
+      const tx = await signedFactory.createAndFundPoll(
+        title,
+        options,
+        duration,
+        rewardPerVoterWei,
+        fundAmountWei, // This is just the reward amount that will be sent to the poll contract
+        {
+          gasLimit: 5000000, // Higher gas limit for this complex operation
+          maxFeePerGas: feeData.maxFeePerGas || ethers.utils.parseUnits("50", "gwei"),
+          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || ethers.utils.parseUnits("40", "gwei")
+        }
+      );
+      
+      logger.info(`Poll creation with funding transaction submitted: ${tx.hash}`);
+      
+      // Wait for the transaction to be mined with more patience (needs more confirmations)
+      const receipt = await tx.wait(2); // Wait for 2 confirmations
+      
+      // Extract the poll address from the event
+      let pollAddress = null;
+      const event = receipt.events?.find(e => e.event === 'PollCreatedAndFunded');
+      if (event && event.args) {
+        pollAddress = event.args.pollAddress;
+      } else {
+        // Fallback: Look for regular PollCreated event
+        const simpleEvent = receipt.events?.find(e => e.event === 'PollCreated');
+        if (simpleEvent && simpleEvent.args) {
+          pollAddress = simpleEvent.args.pollAddress;
+        } else {
+          // Last resort: Try to parse from logs
+          const logs = receipt.logs || [];
+          for (const log of logs) {
+            try {
+              const parsed = signedFactory.interface.parseLog(log);
+              if (parsed.name === 'PollCreatedAndFunded' || parsed.name === 'PollCreated') {
+                pollAddress = parsed.args.pollAddress;
+                break;
+              }
+            } catch (e) {
+              // Ignore parsing errors
+            }
+          }
+        }
+      }
+      
+      if (!pollAddress) {
+        throw new Error('Failed to extract poll address from transaction receipt');
+      }
+      
+      logger.info(`Poll created and funded at ${pollAddress}`);
+      
+      return {
+        transactionHash: receipt.transactionHash,
+        pollAddress
+      };
+    } catch (error) {
+      logger.error('Error creating poll with funding:', error);
+      throw error;
+    }
+  }
   
+  /**
+   * Approve USDT spending for a smart wallet
+   * @param {string} ownerAddress - Address of the USDT owner
+   * @param {string} spenderAddress - Address allowed to spend the USDT (usually the factory)
+   * @param {string|number} amount - Amount to approve in USDT
+   * @returns {Promise<Object>} Transaction result
+   */
+  async approveUSDT(ownerAddress, spenderAddress, amount) {
+    try {
+      logger.info(`Approving ${amount} USDT from ${ownerAddress} to ${spenderAddress}`);
+      
+      // Format the amount with 6 decimals (USDT standard)
+      const amountWei = ethers.utils.parseUnits(amount.toString(), 6);
+      
+      // Get USDT contract
+      const usdtContract = new ethers.Contract(
+        this.usdtAddress,
+        [
+          "function approve(address spender, uint256 amount) returns (bool)",
+          "function allowance(address owner, address spender) view returns (uint256)"
+        ],
+        this.provider
+      );
+      
+      // Check current allowance
+      const currentAllowance = await usdtContract.allowance(ownerAddress, spenderAddress);
+      if (currentAllowance.gte(amountWei)) {
+        logger.info(`Allowance of ${ethers.utils.formatUnits(currentAllowance, 6)} USDT already approved`);
+        return {
+          success: true,
+          transactionHash: null, // No transaction needed
+          allowance: ethers.utils.formatUnits(currentAllowance, 6)
+        };
+      }
+      
+      // Get signed contract for approval
+      const signedUSDT = await this.platformWalletProvider.getSignedContract(
+        this.usdtAddress,
+        [
+          "function approve(address spender, uint256 amount) returns (bool)"
+        ],
+        'approve_usdt'
+      );
+      
+      // Execute the approval transaction
+      const tx = await signedUSDT.approve(
+        spenderAddress,
+        amountWei,
+        {
+          gasLimit: 100000, // Standard gas limit for ERC20 approve
+          maxFeePerGas: ethers.utils.parseUnits("50", "gwei"),
+          maxPriorityFeePerGas: ethers.utils.parseUnits("40", "gwei")
+        }
+      );
+      
+      logger.info(`USDT approval transaction submitted: ${tx.hash}`);
+      
+      // Wait for confirmation
+      const receipt = await tx.wait();
+      
+      return {
+        success: true,
+        transactionHash: receipt.transactionHash,
+        allowance: ethers.utils.formatUnits(amountWei, 6)
+      };
+    } catch (error) {
+      logger.error("Error approving USDT:", error);
+      throw error;
+    }
+  }
   
   // Fund poll with rewards
   async fundPollRewards(pollAddress, amount) {
@@ -117,7 +315,39 @@ class ContractService {
     }
   }
   
-  // Get poll details - update to handle hasVotedAndRewarded instead of hasClaimedReward
+  // Get USDT balance for an address
+  async getUSDTBalance(address) {
+    try {
+      if (!this.usdtAddress) {
+        throw new Error('USDT address not configured');
+      }
+      
+      const usdtContract = new ethers.Contract(
+        this.usdtAddress,
+        [
+          "function balanceOf(address owner) view returns (uint256)",
+          "function decimals() view returns (uint8)"
+        ],
+        this.provider
+      );
+      
+      // Get token decimals
+      const decimals = await usdtContract.decimals();
+      
+      // Get balance
+      const balanceWei = await usdtContract.balanceOf(address);
+      const balance = ethers.utils.formatUnits(balanceWei, decimals);
+      
+      logger.info(`USDT balance for ${address}: ${balance}`);
+      
+      return balance;
+    } catch (error) {
+      logger.error(`Error getting USDT balance for ${address}:`, error);
+      throw error;
+    }
+  }
+  
+  // Get poll details
   async getPollDetails(pollAddress) {
     try {
       logger.info(`Getting details for poll ${pollAddress}`);
@@ -247,7 +477,7 @@ class ContractService {
     }
   }
   
-  // Add this method to your ContractService class
+  // Check if user has received reward
   async hasUserReceivedReward(pollAddress, userAddress) {
     try {
       const pollContract = new ethers.Contract(
@@ -263,6 +493,7 @@ class ContractService {
       return false;
     }
   }
+  
   // Get current nonce for a user
   async getUserNonce(pollAddress, userAddress) {
     try {
@@ -364,6 +595,40 @@ class ContractService {
     } catch (error) {
       logger.error(`Error withdrawing rewards from poll ${pollAddress}:`, error);
       throw error;
+    }
+  }
+  
+  // Get platform fee percentage
+  async getPlatformFeePercent() {
+    try {
+      if (!this.factoryContract) {
+        throw new Error('Factory contract not initialized');
+      }
+      
+      const feePercent = await this.factoryContract.platformFeePercent();
+      // Convert from basis points (e.g. 600 = 6.00%)
+      return feePercent.toNumber() / 100;
+    } catch (error) {
+      logger.error('Error getting platform fee percent:', error);
+      return 6; // Default fee percentage
+    }
+  }
+  
+  // Calculate platform fee
+  async calculatePlatformFee(amount) {
+    try {
+      if (!this.factoryContract) {
+        throw new Error('Factory contract not initialized');
+      }
+      
+      const amountWei = ethers.utils.parseUnits(amount.toString(), 6);
+      const feeWei = await this.factoryContract.calculatePlatformFee(amountWei);
+      
+      return ethers.utils.formatUnits(feeWei, 6);
+    } catch (error) {
+      logger.error('Error calculating platform fee:', error);
+      // Fallback calculation (6%)
+      return (parseFloat(amount) * 0.06).toFixed(6);
     }
   }
   

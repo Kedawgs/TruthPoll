@@ -35,8 +35,21 @@ const app = express();
 
 // --- Core Middleware ---
 
-// Security middleware
-app.use(helmet()); // Set various security HTTP headers
+// Security middleware with enhanced Content Security Policy
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"], // Consider restricting further in production
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:", "https://*.s3.amazonaws.com"],
+      connectSrc: ["'self'", process.env.FRONTEND_URL || "http://localhost:3000"],
+      frameSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: []
+    }
+  }
+})); // Set various security HTTP headers
 
 // CORS Configuration (ensure origins are correctly set in .env)
 const corsOptions = {
